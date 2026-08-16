@@ -26,6 +26,8 @@ class UserCreate(BaseModel):
     @classmethod
     def normalizar_email_field(cls, v: str) -> str:
         """Normalizar correo en el schema."""
+        if not isinstance(v, str):
+            return v
         v = normalizar_email(v)
         v = validar_email_longitud(v)
         return v
@@ -50,6 +52,8 @@ class LoginRequest(BaseModel):
     @classmethod
     def normalizar_email_field(cls, v: str) -> str:
         """Normalizar correo en el schema."""
+        if not isinstance(v, str):
+            return v
         v = normalizar_email(v)
         v = validar_email_longitud(v)
         return v

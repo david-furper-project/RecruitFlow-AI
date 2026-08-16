@@ -46,7 +46,7 @@ def login(request: LoginRequest, session: Session = Depends(get_session)):
     - 401: Credenciales inválidas o cuenta inactiva
     - 423: Cuenta bloqueada temporalmente
     """
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # 1. Normalizar correo y buscar usuario
     email_normalizado = request.email.lower().strip()
@@ -141,7 +141,7 @@ def register(request: UserCreate, session: Session = Depends(get_session)):
         password_hash=hash_password(request.password),
         role="recruiter",
         is_active=True,
-        password_changed_at=datetime.now(timezone.utc),
+        password_changed_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     session.add(nuevo_recruiter)
