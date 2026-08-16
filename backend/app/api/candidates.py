@@ -1,13 +1,14 @@
 import asyncio
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.db.session import get_session
 from app.models import Application, CandidateProfile, User
 from app.services.ai_service import generate_embedding
+from app.services.notification_service import async_deliver_notification
 from app.services.parsing_service import (
     EXCLUDED_FIELDS,
     EXTRACTION_PROMPT_VERSION,
@@ -115,6 +116,7 @@ async def _process_single_application(
 
 @router.post("/applications")
 async def create_application(
+    background_tasks: BackgroundTasks,
     full_name: str = Form(...),
     email: str = Form(...),
     phone: Optional[str] = Form(None),
@@ -123,6 +125,8 @@ async def create_application(
     session: Session = Depends(get_session),
 ):
     result = await _process_single_application(session, full_name, email, phone, file, offer_id)
+    if result.get("application_id"):
+        background_tasks.add_task(async_deliver_notification, result["application_id"], "recepcion")
     return {
         "message": "CV cargado y perfil estructurado.",
         **result,
@@ -131,6 +135,7 @@ async def create_application(
 
 @router.post("/applications/bulk")
 async def bulk_upload_applications(
+    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     session: Session = Depends(get_session),
 ):
@@ -153,6 +158,8 @@ async def bulk_upload_applications(
                 if found_user is not None:
                     return {"filename": file.filename, "status": "duplicado", "message": "Email duplicado en lote."}
                 result = await _process_single_application(session, file.filename.replace(".pdf", "").replace(".docx", ""), email, None, file)
+                if result.get("status") == "processed" and result.get("application_id"):
+                    background_tasks.add_task(async_deliver_notification, result["application_id"], "recepcion")
                 return {"filename": file.filename, **result}
             except HTTPException as exc:
                 return {"filename": file.filename, "status": "error", "message": exc.detail}
@@ -166,6 +173,7 @@ async def bulk_upload_applications(
 
 @router.post("/apply")
 async def legacy_apply(
+    background_tasks: BackgroundTasks,
     offer_id: Optional[int] = Form(None),
     full_name: str = Form(...),
     email: str = Form(...),
@@ -173,7 +181,13 @@ async def legacy_apply(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ):
-    return await create_application(full_name, email, phone, offer_id, file, session)
+    result = await _process_single_application(session, full_name, email, phone, file, offer_id)
+    if result.get("application_id"):
+        background_tasks.add_task(async_deliver_notification, result["application_id"], "recepcion")
+    return {
+        "message": "CV cargado y perfil estructurado.",
+        **result,
+    }
 
 
 @router.post("/{candidate_id}/upload-cv")

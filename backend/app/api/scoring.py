@@ -1,13 +1,13 @@
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.db.session import get_session
 from app.models import Application, CandidateProfile, User
 from app.services.audit_service import get_application_audit
-from app.services.notification_service import get_notification_completion_rate
+from app.services.notification_service import async_deliver_notification, get_notification_completion_rate
 from app.services.scoring_service import evaluate_application, ensure_final_status_has_decision, get_application_ranking, register_decision
 
 router = APIRouter()
@@ -37,10 +37,14 @@ def get_candidates_ranking(job_offer_id: int, session: Session = Depends(get_ses
 
 
 @router.patch("/applications/{application_id}/decision")
-def update_application_decision(application_id: int, payload: DecisionRequest, session: Session = Depends(get_session)):
+def update_application_decision(application_id: int, payload: DecisionRequest, background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
     try:
         decision = register_decision(session, application_id, payload.user_id, payload.action, payload.discrepancy_reason)
         ensure_final_status_has_decision(session, application_id)
+        
+        # Disparar envío asíncrono
+        background_tasks.add_task(async_deliver_notification, application_id, payload.action)
+        
         return {
             "message": "Decision recorded successfully",
             "application_id": application_id,
@@ -65,5 +69,6 @@ def notification_completion_rate(session: Session = Depends(get_session)):
     return {
         "metric_name": "notification_completion_rate",
         "rate": get_notification_completion_rate(session),
-        "threshold": 0.95,
+        "threshold": 95.0,
     }
+
