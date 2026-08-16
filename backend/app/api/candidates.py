@@ -53,16 +53,29 @@ async def _process_single_application(
     excluded_fields = [field for field in EXCLUDED_FIELDS if field.lower() in filtered_text.lower()]
     profile_data = extract_candidate_profile(filtered_text)
 
+    clean_embedding_text = f"{profile_data.get('career_summary', '')} {profile_data.get('tech_stack', '')}".strip()
+    if not clean_embedding_text or clean_embedding_text == " ":
+        clean_embedding_text = filtered_text
+
+    # Use AI extracted email and phone if available
+    extracted_email = profile_data.get("email")
+    if extracted_email and "@" in extracted_email:
+        email = extracted_email
+        
+    extracted_phone = profile_data.get("phone")
+    if extracted_phone:
+        phone = extracted_phone
+
     user = await _create_or_get_user(session, email)
     candidate = session.exec(select(CandidateProfile).where(CandidateProfile.user_id == user.id)).first()
     if candidate is None:
         candidate = CandidateProfile(
             user_id=user.id,
-            full_name=full_name,
+            full_name=profile_data.get("full_name") or full_name,
             resume_url="pending",
             phone=phone,
             extracted_text=extracted_text,
-            embedding=generate_embedding(filtered_text),
+            embedding=generate_embedding(clean_embedding_text),
         )
         session.add(candidate)
         session.commit()
@@ -71,7 +84,7 @@ async def _process_single_application(
         candidate.full_name = full_name or candidate.full_name
         candidate.phone = phone or candidate.phone
         candidate.extracted_text = extracted_text
-        candidate.embedding = generate_embedding(filtered_text)
+        candidate.embedding = generate_embedding(clean_embedding_text)
 
     merged = validate_and_merge_profile(profile_data, {
         "full_name": full_name,
@@ -210,7 +223,12 @@ async def upload_cv_legacy(
     candidate.years_of_experience = structured.get("years_of_experience") if structured.get("years_of_experience") is not None else candidate.years_of_experience
     candidate.courses_and_diplomas = structured.get("courses_and_diplomas") or candidate.courses_and_diplomas
     candidate.career_summary = structured.get("career_summary") or candidate.career_summary
-    candidate.embedding = generate_embedding(extracted_text)
+    
+    clean_embedding_text = f"{structured.get('career_summary', '')} {structured.get('tech_stack', '')}".strip()
+    if not clean_embedding_text or clean_embedding_text == " ":
+        clean_embedding_text = extracted_text
+        
+    candidate.embedding = generate_embedding(clean_embedding_text)
     session.add(candidate)
     session.commit()
     return {"message": "CV updated.", "resume_url": candidate.resume_url}

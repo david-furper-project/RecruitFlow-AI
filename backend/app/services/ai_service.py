@@ -8,7 +8,7 @@ from app.core.config import settings
 
 
 def get_embeddings_client():
-    if getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
+    if getattr(settings, "USE_MOCK_AI", False) or getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
         class MockEmbeddings:
             def embed_query(self, text: str) -> List[float]:
                 import hashlib
@@ -25,7 +25,7 @@ def get_embeddings_client():
     )
 
 def get_llm():
-    if getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
+    if getattr(settings, "USE_MOCK_AI", False) or getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
         class MockLLM:
             def invoke(self, prompt: str):
                 class Response:
@@ -75,7 +75,7 @@ def mock_extract(raw_text: str) -> dict:
 
 def extract_structured_profile(raw_text: str, target_role: str = None) -> dict:
     """Uses LLM to extract structured data from raw CV text, calculated relative to target_role if provided."""
-    if getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
+    if getattr(settings, "USE_MOCK_AI", False) or getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
         return mock_extract(raw_text)
         
     try:
@@ -92,10 +92,9 @@ def extract_structured_profile(raw_text: str, target_role: str = None) -> dict:
         prompt = PromptTemplate.from_template(
             "Extrae la siguiente información estructurada en formato JSON puro del siguiente CV. "
             "Usa exactamente estas claves en el JSON: "
-            "'nombre' (string), "
+            "'full_name' (string), "
             "'email' (string, o 'No especificado'), "
-            "'telefono' (string, o 'No especificado'), "
-            "'nacionalidad' (string, o 'No especificada' si no se encuentra), "
+            "'phone' (string, o 'No especificado'), "
             "'tech_stack' (string de tecnologías separadas por coma), "
             "'years_of_experience' (entero, número de años totales, o 0 si no se encuentra), "
             "'courses_and_diplomas' (string, lista breve de estudios/cursos principales), "
@@ -126,7 +125,7 @@ def extract_structured_profile(raw_text: str, target_role: str = None) -> dict:
 
 def extract_job_tech_stack(text: str) -> str:
     """Uses LLM to extract a comma-separated list of technologies from a job description."""
-    if getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
+    if getattr(settings, "USE_MOCK_AI", False) or getattr(settings, "GEMINI_API_KEY", "mock_gemini_key") == "mock_gemini_key":
         return "React, Node.js, AWS, PostgreSQL (Mock)"
         
     try:
@@ -135,6 +134,7 @@ def extract_job_tech_stack(text: str) -> str:
             "Extrae el stack tecnológico (lenguajes, frameworks, herramientas, bases de datos, nube) "
             "del siguiente texto de descripción/requerimientos de una oferta laboral.\n"
             "Responde ÚNICAMENTE con una lista de tecnologías separadas por coma, sin ningún otro texto o viñetas.\n"
+            "Si el texto no menciona ninguna tecnología o herramienta específica, responde ÚNICAMENTE con: 'No especificado'.\n"
             "Texto:\n{text}\n"
         )
         chain = prompt | llm

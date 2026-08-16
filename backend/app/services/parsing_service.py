@@ -27,10 +27,13 @@ EXTRACTION_PROMPT_VERSION = "extract-v1.0"
 
 class StructuredCandidateProfile(BaseModel):
     full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     tech_stack: Optional[str] = None
     years_of_experience: Optional[int] = None
     courses_and_diplomas: Optional[str] = None
     career_summary: Optional[str] = None
+    salary_expectation: Optional[str] = None
 
 
 def sanitize_text_for_model(raw_text: str) -> str:
@@ -86,7 +89,7 @@ def _parse_structured_response(payload: Any) -> Dict[str, Any]:
         data = json.loads(str(payload))
 
     cleaned: Dict[str, Any] = {}
-    for key in ["full_name", "tech_stack", "years_of_experience", "courses_and_diplomas", "career_summary"]:
+    for key in ["full_name", "email", "phone", "tech_stack", "years_of_experience", "courses_and_diplomas", "career_summary", "salary_expectation"]:
         value = data.get(key)
         if key == "years_of_experience":
             if isinstance(value, str):
@@ -103,12 +106,18 @@ def _parse_structured_response(payload: Any) -> Dict[str, Any]:
 
     if cleaned.get("full_name") in (None, ""):
         cleaned["full_name"] = None
-    if cleaned.get("tech_stack") in (None, ""):
+    if cleaned.get("email") in (None, "", "No especificado"):
+        cleaned["email"] = None
+    if cleaned.get("phone") in (None, "", "No especificado"):
+        cleaned["phone"] = None
+    if cleaned.get("tech_stack") in (None, "", "No especificado"):
         cleaned["tech_stack"] = None
-    if cleaned.get("courses_and_diplomas") in (None, ""):
+    if cleaned.get("courses_and_diplomas") in (None, "", "No especificado"):
         cleaned["courses_and_diplomas"] = None
-    if cleaned.get("career_summary") in (None, ""):
+    if cleaned.get("career_summary") in (None, "", "No especificado"):
         cleaned["career_summary"] = None
+    if cleaned.get("salary_expectation") in (None, "", "No especificada"):
+        cleaned["salary_expectation"] = None
 
     return cleaned
 
@@ -118,28 +127,20 @@ def extract_candidate_profile(raw_text: str) -> Dict[str, Any]:
     if not filtered_text:
         return {
             "full_name": None,
+            "email": None,
+            "phone": None,
             "tech_stack": None,
             "years_of_experience": None,
             "courses_and_diplomas": None,
             "career_summary": None,
+            "salary_expectation": None,
         }
 
     try:
-        from langchain_openai import ChatOpenAI
-        from langchain_core.prompts import ChatPromptTemplate
-
-        if getattr(settings, "OPENAI_API_KEY", "mock_openai_key") == "mock_openai_key":
-            raise RuntimeError("openai mock")
-
-        llm = ChatOpenAI(model=settings.OPENAI_MODEL, temperature=0, api_key=settings.OPENAI_API_KEY)
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "Eres un extractor de CV. Devuelve solo un JSON válido con estas claves: full_name, tech_stack, years_of_experience, courses_and_diplomas, career_summary."),
-            ("user", "Extrae solo la información relevante para desempeño laboral del siguiente texto. Excluye datos sensibles e irrelevantes. Texto:\n{cv_text}")
-        ])
-        structured_llm = llm.with_structured_output(StructuredCandidateProfile)
-        response = structured_llm.invoke({"cv_text": filtered_text})
-        parsed = _parse_structured_response(response)
-        validated = StructuredCandidateProfile(**{k: v for k, v in parsed.items() if v is not None})
+        from app.services.ai_service import extract_structured_profile
+        
+        parsed = extract_structured_profile(filtered_text)
+        validated = StructuredCandidateProfile(**{k: v for k, v in parsed.items() if v is not None and k in StructuredCandidateProfile.model_fields})
         return _parse_structured_response(validated)
     except Exception as exc:
         print(f"Structured extraction fallback activated: {exc}")
@@ -148,11 +149,11 @@ def extract_candidate_profile(raw_text: str) -> Dict[str, Any]:
             validated = StructuredCandidateProfile(**{k: v for k, v in fallback.items() if v is not None})
             return _parse_structured_response(validated)
         except ValidationError:
-            return _parse_structured_response(fallback)
+            return _parse_structured_response(StructuredCandidateProfile())
 
 
 def validate_and_merge_profile(candidate: Dict[str, Any], existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    merged = {"full_name": None, "tech_stack": None, "years_of_experience": None, "courses_and_diplomas": None, "career_summary": None}
+    merged = {"full_name": None, "email": None, "phone": None, "tech_stack": None, "years_of_experience": None, "courses_and_diplomas": None, "career_summary": None, "salary_expectation": None}
     if existing:
         merged.update({k: v for k, v in existing.items() if v is not None})
     for key, value in candidate.items():

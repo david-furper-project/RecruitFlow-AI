@@ -117,6 +117,7 @@ class Notification(SQLModel, table=True):
     application_id: int = Field(foreign_key="application.id", index=True)
     type: str = Field(max_length=30)
     send_status: str = Field(max_length=20)
+    message_id: Optional[str] = Field(default=None)
     sent_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     retry_count: int = Field(default=0)

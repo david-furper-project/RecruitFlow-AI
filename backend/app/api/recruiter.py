@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -60,5 +60,41 @@ def save_scraped_candidate(request: LinkedInScrapeRequest, session: Session = De
     )
     session.add(new_candidate)
     session.commit()
-    return {"message": "Candidato guardado exitosamente.", "candidate_id": new_candidate.id}
+    session.refresh(new_candidate)
 
+    return {
+        "message": "Candidato guardado exitosamente.",
+        "candidate_id": new_candidate.id,
+    }
+
+
+@router.post("/mass-upload")
+async def mass_upload_cvs(
+    offer_id: int = Form(...),
+    files: list[UploadFile] = File(...),
+    session: Session = Depends(get_session)
+):
+    from app.api.candidates import _process_single_application
+    import uuid
+    
+    results = []
+    for file in files:
+        # Puesto que mass-upload no pide nombre y correo en la UI, generamos mock
+        # En una versión final, el correo y nombre se extraería con IA desde el PDF
+        mock_email = f"candidato_{uuid.uuid4().hex[:8]}@ejemplo.com"
+        mock_name = f"Candidato {file.filename}"
+        
+        try:
+            res = await _process_single_application(
+                session=session,
+                full_name=mock_name,
+                email=mock_email,
+                phone=None,
+                file=file,
+                offer_id=offer_id
+            )
+            results.append({"filename": file.filename, "status": "success", "data": res})
+        except Exception as e:
+            results.append({"filename": file.filename, "status": "error", "detail": str(e)})
+            
+    return {"message": f"Procesados {len(files)} CVs", "results": results}

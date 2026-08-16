@@ -9,29 +9,6 @@ from app.models import Application, Decision, Notification
 ALLOWED_NOTIFICATION_TYPES = {"recepcion", "avance", "descarte"}
 
 
-def sendgrid_mailer(to_email: str, subject: str, body: str) -> bool:
-    from app.core.config import settings
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail
-
-    if settings.SENDGRID_API_KEY == "mock_sendgrid_key":
-        print(f"[MOCK SENDGRID] To: {to_email} | Subject: {subject} | Body: {body}")
-        return True
-
-    message = Mail(
-        from_email=settings.SENDER_EMAIL,
-        to_emails=to_email,
-        subject=subject,
-        plain_text_content=body,
-    )
-    try:
-        client = SendGridAPIClient(settings.SENDGRID_API_KEY)
-        response = client.send(message)
-        return response.status_code in (200, 201, 202)
-    except Exception:
-        return False
-
-
 def _notification_type_for_action(action: str) -> str:
     mapping = {
         "avanzar": "avance",
@@ -88,7 +65,10 @@ async def async_deliver_notification(application_id: int, action: str):
     Debe llamarse utilizando FastAPI BackgroundTasks.
     No usa la sesión de la request para evitar conflictos.
     """
+    from app.services.mail import get_mail_provider, MailError
+    
     delays = [60, 300, 900]  # 1 min, 5 min, 15 min
+    provider = get_mail_provider()
     
     with Session(engine) as session:
         application = session.get(Application, application_id)
@@ -115,10 +95,24 @@ async def async_deliver_notification(application_id: int, action: str):
         if attempt > 0:
             await asyncio.sleep(delay)
             
+        message_id = None
+        error_msg = None
+        
         try:
-            sent = sendgrid_mailer(candidate_email, subject, body)
-        except Exception:
+            message_id = provider.send(candidate_email, subject, body)
+            sent = True
+        except MailError as e:
             sent = False
+            error_msg = str(e)
+            print(f"[Mail Provider Error] {error_msg}")
+            
+            # Si el error indica límite excedido (429), reintentamos en el siguiente loop
+            # Si es 401 o 403, podría ser permanente pero dejaremos que agote los intentos
+            # según la instrucción.
+        except Exception as e:
+            sent = False
+            error_msg = str(e)
+            print(f"[Unknown Mail Error] {error_msg}")
             
         with Session(engine) as session:
             notification = session.get(Notification, notification_id)
@@ -126,6 +120,7 @@ async def async_deliver_notification(application_id: int, action: str):
                 notification.send_status = "enviado"
                 notification.sent_at = datetime.utcnow()
                 notification.retry_count = attempt
+                notification.message_id = message_id
                 session.add(notification)
                 session.commit()
                 return

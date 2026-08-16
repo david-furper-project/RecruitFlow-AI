@@ -79,11 +79,11 @@ export const apiClient = {
     if (!res.ok) throw new Error('Error creating offer');
     return res.json();
   },
-  updateApplicationStatus: async (offerId: number, candidateId: number, status: string) => {
+  updateApplicationStatus: async (offerId: number, candidateId: number, status: string, discrepancyReason?: string) => {
     const res = await fetch(`${BASE_URL}/offers/${offerId}/application/${candidateId}/status`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, discrepancy_reason: discrepancyReason })
     });
     if (!res.ok) throw new Error('Error updating application status');
     return res.json();

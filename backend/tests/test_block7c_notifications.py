@@ -61,12 +61,14 @@ def test_data_for_notifications(db_session: Session):
 @pytest.mark.asyncio
 async def test_successful_notification_delivery(db_session: Session, test_data_for_notifications, monkeypatch):
     application = test_data_for_notifications
+    class MockMailProvider:
+        def send(self, to: str, subject: str, html: str) -> str:
+            return "mock-id-123"
+            
+    def mock_get_provider():
+        return MockMailProvider()
     
-    # Mock sendgrid_mailer para que retorne True
-    def mock_mailer(email, subject, body):
-        return True
-    
-    monkeypatch.setattr("app.services.notification_service.sendgrid_mailer", mock_mailer)
+    monkeypatch.setattr("app.services.mail.get_mail_provider", mock_get_provider)
     
     # Ejecutar la tarea en background
     await async_deliver_notification(application.id, "recepcion")
@@ -87,14 +89,18 @@ async def test_successful_notification_delivery(db_session: Session, test_data_f
 async def test_failed_notification_retries(db_session: Session, test_data_for_notifications, monkeypatch):
     application = test_data_for_notifications
     
-    # Mock sendgrid_mailer para que siempre falle y asyncio.sleep para que no demore el test real
-    def mock_mailer(email, subject, body):
-        return False
+    class MockMailProvider:
+        def send(self, to: str, subject: str, html: str) -> str:
+            from app.services.mail import MailError
+            raise MailError("Simulated error")
+            
+    def mock_get_provider():
+        return MockMailProvider()
         
     async def mock_sleep(seconds):
         pass
         
-    monkeypatch.setattr("app.services.notification_service.sendgrid_mailer", mock_mailer)
+    monkeypatch.setattr("app.services.mail.get_mail_provider", mock_get_provider)
     monkeypatch.setattr("asyncio.sleep", mock_sleep)
     
     await async_deliver_notification(application.id, "avanzar")

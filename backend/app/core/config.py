@@ -15,7 +15,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = "mock_gemini_key"
     USE_MOCK_AI: bool = False
 
-    # SendGrid
+    # Mail Provider
+    MAIL_PROVIDER: str = "mailpit"
+    MAIL_FROM_EMAIL: str = "noreply@pri.local"
+    MAIL_FROM_NAME: str = "PRI - Reclutamiento"
+    BREVO_API_KEY: str = "mock_brevo_key"
+
+    # SendGrid (Legacy/Fallback)
     SENDGRID_API_KEY: str = "mock_sendgrid_key"
     SENDER_EMAIL: str = "noreply@pri.local"
 

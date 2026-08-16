@@ -5,7 +5,6 @@ import { Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // Validación de política de contraseña (cliente)
 const PASSWORD_MIN_LEN = 12;
-const PASSWORD_MAX_LEN = 128;
 
 interface PasswordRequirement {
   label: string;
@@ -51,7 +50,6 @@ export default function LoginPage() {
   const login = useAuthStore((state) => state.login);
 
   const passwordRequirements = validatePasswordPolicy(password, email);
-  const allRequirementsMet = passwordRequirements.every((r) => r.met);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

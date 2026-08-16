@@ -106,6 +106,14 @@ def _install_pgvector_and_constraints() -> None:
                 IF NOT EXISTS (
                     SELECT 1
                     FROM information_schema.columns
+                    WHERE table_name = 'notification' AND column_name = 'message_id'
+                ) THEN
+                    ALTER TABLE notification ADD COLUMN message_id VARCHAR;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
                     WHERE table_name = 'evaluation' AND column_name = 'interview_questions'
                 ) THEN
                     ALTER TABLE evaluation ADD COLUMN interview_questions TEXT;

@@ -174,12 +174,17 @@ export default function RecruiterDashboard() {
       if (!confirmAdvance) return;
     }
 
+    let discrepancyReason = undefined;
+    if (status === 'rejected') {
+      discrepancyReason = window.prompt("Opcional: Si este candidato fue recomendado por la IA, debes ingresar una razón para descartarlo. ¿Cuál es el motivo?") || undefined;
+    }
+
     try {
-      await apiClient.updateApplicationStatus(selectedOffer.id, candidateId, status);
+      await apiClient.updateApplicationStatus(selectedOffer.id, candidateId, status, discrepancyReason);
       loadMatches(selectedOffer.id);
     } catch (err) {
       console.error(err);
-      alert('Error al actualizar estado del candidato');
+      alert('Error al actualizar estado del candidato. Recuerda ingresar un motivo si estás contradiciendo a la IA.');
     }
   };
 
@@ -469,10 +474,24 @@ export default function RecruiterDashboard() {
                                 </div>
                               </td>
                               <td className="p-4 text-center">
-                                <div className="flex justify-center gap-2">
+                                <div className="flex justify-center items-center gap-2">
                                   <button onClick={() => setSelectedCandidate(match)} className="bg-[#b91c1c] text-white text-xs px-4 py-2 font-bold hover:bg-red-800 transition-colors rounded-sm shadow-sm">Ver</button>
-                                  <button onClick={() => handleUpdateStatus(match.candidate_id, 'rejected')} className="bg-white text-[#b91c1c] border border-[#b91c1c] text-xs px-4 py-2 font-bold hover:bg-red-50 transition-colors rounded-sm shadow-sm">Eliminar</button>
-                                  <button onClick={() => handleUpdateStatus(match.candidate_id, 'advanced')} className="bg-[#f59e0b] text-black text-xs px-4 py-2 font-bold hover:bg-amber-400 transition-colors rounded-sm shadow-sm">Avanzar</button>
+                                  {match.status === 'rejected' ? (
+                                    <div className="flex items-center gap-1 text-xs px-3 py-1 font-bold text-gray-500 bg-gray-100 rounded-full cursor-not-allowed">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                      Descartado
+                                    </div>
+                                  ) : match.status === 'reviewed' || match.status === 'advanced' ? (
+                                    <div className="flex items-center gap-1 text-xs px-3 py-1 font-bold text-green-700 bg-green-100 rounded-full">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                      Avanzado
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => handleUpdateStatus(match.candidate_id, 'rejected')} className="bg-white text-[#b91c1c] border border-[#b91c1c] text-xs px-4 py-2 font-bold hover:bg-red-50 transition-colors rounded-sm shadow-sm">Eliminar</button>
+                                      <button onClick={() => handleUpdateStatus(match.candidate_id, 'advanced')} className="bg-[#f59e0b] text-black text-xs px-4 py-2 font-bold hover:bg-amber-400 transition-colors rounded-sm shadow-sm">Avanzar</button>
+                                    </>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -556,11 +575,11 @@ export default function RecruiterDashboard() {
                 </div>
                 <div>
                   <p className="font-bold text-gray-500 mb-1 text-xs uppercase tracking-wider">Disponibilidad</p>
-                  <p className="text-gray-900 font-medium">Inmediata (Mock)</p> {/* Backend doesn't have availability yet */}
+                  <p className="text-gray-900 font-medium">Inmediata</p> {/* Backend doesn't have availability yet */}
                 </div>
                 <div>
                   <p className="font-bold text-gray-500 mb-1 text-xs uppercase tracking-wider">Email de Contacto</p>
-                  <p className="text-gray-900 font-medium break-all">{selectedCandidate.user?.email || 'No especificado'}</p>
+                  <p className="text-gray-900 font-medium break-all">{selectedCandidate.email || 'No especificado'}</p>
                 </div>
                 <div>
                   <p className="font-bold text-gray-500 mb-1 text-xs uppercase tracking-wider">Teléfono</p>

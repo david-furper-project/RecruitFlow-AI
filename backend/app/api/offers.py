@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from app.db.session import get_session
 from app.models import JobOffer, CandidateProfile
@@ -98,6 +98,7 @@ def match_candidates(offer_id: int, session: Session = Depends(get_session), lim
             "candidate_id": cand.id,
             "full_name": cand.full_name,
             "email": cand.user.email if cand.user else "No especificado",
+            "phone": cand.phone,
             "resume_url": cand.resume_url,
             "tech_stack": cand.tech_stack,
             "years_of_experience": cand.years_of_experience,
@@ -113,15 +114,19 @@ def match_candidates(offer_id: int, session: Session = Depends(get_session), lim
 
 class ApplicationStatusUpdate(BaseModel):
     status: str
+    discrepancy_reason: Optional[str] = None
 
 @router.put("/{offer_id}/application/{candidate_id}/status")
 def update_application_status(
     offer_id: int, 
     candidate_id: int, 
     update: ApplicationStatusUpdate,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session)
 ):
     import app.models as app_model
+    from app.services.scoring_service import register_decision, ensure_final_status_has_decision
+    from app.services.notification_service import async_deliver_notification
     
     offer = session.get(JobOffer, offer_id)
     candidate = session.get(CandidateProfile, candidate_id)
@@ -138,16 +143,30 @@ def update_application_status(
         app = app_model.Application(
             candidate_id=candidate_id,
             job_offer_id=offer_id,
-            status=update.status
+            status="pending"
         )
         session.add(app)
-    else:
-        app.status = update.status
+        session.flush()
         
-    session.commit()
-    session.refresh(app)
+    action_map = {
+        "advanced": "avanzar",
+        "rejected": "descartar",
+        "hired": "contratar",
+        "pending": "reservar"
+    }
+    action = action_map.get(update.status, "reservar")
     
-    return app
+    try:
+        decision = register_decision(session, app.id, user_id=1, action=action, discrepancy_reason=update.discrepancy_reason)
+        ensure_final_status_has_decision(session, app.id)
+        if background_tasks:
+            background_tasks.add_task(async_deliver_notification, app.id, action)
+    except ValueError as e:
+        # Si la decisión contradice la IA sin justificación
+        raise HTTPException(status_code=400, detail=str(e))
+    session.commit()
+        
+    return {"status": update.status, "application_id": app.id}
 
 class ExtractTechStackRequest(BaseModel):
     text: str
