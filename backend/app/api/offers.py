@@ -151,10 +151,19 @@ def update_application_status(
     ).first()
     
     if not app:
+        from app.models import PipelineStage
+        first_stage = session.exec(
+            select(PipelineStage)
+            .where(PipelineStage.job_offer_id == offer_id)
+            .order_by(PipelineStage.order_index.asc())
+        ).first()
+        first_stage_id = first_stage.id if first_stage else None
+
         app = app_model.Application(
             candidate_id=candidate_id,
             job_offer_id=offer_id,
-            status="pending"
+            status="pending",
+            current_stage_id=first_stage_id
         )
         session.add(app)
         session.flush()

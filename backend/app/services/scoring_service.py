@@ -129,7 +129,7 @@ def evaluate_application(session: Session, application_id: int) -> Dict[str, Any
         excluded_fields="nacionalidad,edad,fecha_nacimiento,fotografia,universidad_egreso,direccion,estado_civil,genero",
     )
     session.add(evaluation)
-
+    
     application.similarity_score = score
     session.add(application)
     session.commit()
@@ -137,13 +137,25 @@ def evaluate_application(session: Session, application_id: int) -> Dict[str, Any
 
     return {
         "application_id": application.id,
-        "similarity_score": score,
-        "suggested_category": category,
+        "score": score,
+        "category": category,
         "explanation": explanation,
-        "prompt_version": SCORING_PROMPT_VERSION,
-        "model_version": SCORING_MODEL_VERSION,
+        "interview_questions": interview_questions,
     }
 
+def async_evaluate_application(application_id: int):
+    """
+    Background task wrapper for evaluate_application.
+    Opens its own DB session to avoid interfering with the request session.
+    """
+    from app.db.session import engine
+    from sqlmodel import Session
+    
+    with Session(engine) as session:
+        try:
+            evaluate_application(session, application_id)
+        except Exception as e:
+            print(f"Error in background evaluate_application: {e}")
 
 def register_decision(session: Session, application_id: int, user_id: int, action: str, discrepancy_reason: Optional[str]) -> Decision:
     if action not in {"avanzar", "descartar", "reservar"}:

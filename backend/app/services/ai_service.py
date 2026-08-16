@@ -114,11 +114,18 @@ def extract_structured_profile(raw_text: str, target_role: str = None) -> dict:
             content = content[0].get("text", "")
         content = content.strip()
         
-        if content.startswith("```json"):
-            content = content.replace("```json", "").replace("```", "").strip()
-        elif content.startswith("```"):
-            content = content[3:-3].strip()
-            
+        import re
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+        if match:
+            content = match.group(1).strip()
+        else:
+            # Maybe it didn't use markdown blocks but just returned the JSON
+            # Try to find the first '{' and last '}'
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                content = content[start_idx:end_idx+1]
+                
         return json.loads(content)
     except Exception as e:
         print(f"Error calling Gemini LLM: {e}. Falling back to mock extraction.")

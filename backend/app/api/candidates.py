@@ -112,15 +112,19 @@ async def _process_single_application(
             )
         ).first()
         if app_record is None:
-            app_record = Application(candidate_id=candidate.id, job_offer_id=offer_id, status="pending")
+            from app.models import PipelineStage
+            first_stage = session.exec(
+                select(PipelineStage)
+                .where(PipelineStage.job_offer_id == offer_id)
+                .order_by(PipelineStage.order_index.asc())
+            ).first()
+            first_stage_id = first_stage.id if first_stage else None
+            
+            app_record = Application(candidate_id=candidate.id, job_offer_id=offer_id, status="pending", current_stage_id=first_stage_id)
             session.add(app_record)
             session.commit()
             session.refresh(app_record)
-            
-            # Evaluar la postulación inmediatamente para tener el similarity_score
-            from app.services.scoring_service import evaluate_application
-            evaluate_application(session, app_record.id)
-            session.refresh(app_record)
+
 
     return {
         "status": "processed",
@@ -145,6 +149,8 @@ async def create_application(
     result = await _process_single_application(session, full_name, email, phone, file, offer_id)
     if result.get("application_id"):
         background_tasks.add_task(async_deliver_notification, result["application_id"], "recepcion")
+        from app.services.scoring_service import async_evaluate_application
+        background_tasks.add_task(async_evaluate_application, result["application_id"])
     return {
         "message": "CV cargado y perfil estructurado.",
         **result,
@@ -179,6 +185,8 @@ async def bulk_upload_applications(
                 result = await _process_single_application(session, file.filename.replace(".pdf", "").replace(".docx", ""), email, None, file, offer_id)
                 if result.get("status") == "processed" and result.get("application_id"):
                     background_tasks.add_task(async_deliver_notification, result["application_id"], "recepcion")
+                    from app.services.scoring_service import async_evaluate_application
+                    background_tasks.add_task(async_evaluate_application, result["application_id"])
                 return {"filename": file.filename, **result}
             except HTTPException as exc:
                 return {"filename": file.filename, "status": "error", "message": exc.detail}
