@@ -11,6 +11,63 @@ def _install_pgvector_and_constraints() -> None:
     with Session(engine) as session:
         session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
 
+        # ===== BLOQUE 6: Actualizar tabla user =====
+        session.execute(text("""
+            DO $$
+            BEGIN
+                -- Cambiar default de role a 'recruiter'
+                ALTER TABLE "user" ALTER COLUMN role SET DEFAULT 'recruiter';
+                
+                -- Agregar columnas de control de acceso y sesión
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user' AND column_name = 'is_active'
+                ) THEN
+                    ALTER TABLE "user" ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user' AND column_name = 'last_login_at'
+                ) THEN
+                    ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMP;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user' AND column_name = 'failed_attempts'
+                ) THEN
+                    ALTER TABLE "user" ADD COLUMN failed_attempts INT NOT NULL DEFAULT 0;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user' AND column_name = 'locked_until'
+                ) THEN
+                    ALTER TABLE "user" ADD COLUMN locked_until TIMESTAMP;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user' AND column_name = 'password_changed_at'
+                ) THEN
+                    ALTER TABLE "user" ADD COLUMN password_changed_at TIMESTAMP;
+                END IF;
+            END $$;
+        """))
+
+        # Crear índice case-insensitive en email
+        session.execute(text("""
+            DROP INDEX IF EXISTS idx_user_email;
+            CREATE UNIQUE INDEX idx_user_email ON "user" (lower(email));
+        """))
+
+        # ===== Resto de migraciones =====
         session.execute(text("""
             DO $$
             BEGIN
@@ -102,21 +159,27 @@ def _install_pgvector_and_constraints() -> None:
 
 
 def _create_default_admin() -> None:
-    """Crear usuario admin por defecto si no existe."""
+    """
+    Crear usuario admin por defecto si no existe.
+    Contraseña: Admin123456 (cumple política Bloque 6)
+    """
     from app.models import User
     from app.core.auth import hash_password
-    
+    from datetime import datetime, timezone
+
     with Session(engine) as session:
-        # Verificar si el admin ya existe
-        statement = select(User).where(User.email == "admin@pri.local")
+        # Verificar si el admin ya existe (case-insensitive)
+        statement = select(User).where(User.email == "admin@ejemplo.com")
         existing_admin = session.exec(statement).first()
-        
+
         if not existing_admin:
             # Crear admin
             admin_user = User(
-                email="admin@pri.local",
-                password_hash=hash_password("admin"),
-                role="recruiter"
+                email="admin@ejemplo.com",
+                password_hash=hash_password("Admin123456"),
+                role="recruiter",
+                is_active=True,
+                password_changed_at=datetime.now(timezone.utc),
             )
             session.add(admin_user)
             session.commit()

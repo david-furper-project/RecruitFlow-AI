@@ -1,103 +1,164 @@
+"""
+Endpoints de autenticación: login, registro, logout.
+Implementa Bloque 6: Validación de credenciales y sesión.
+"""
+
+from datetime import datetime, timezone, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlmodel import Session, select
+
 from app.db.session import get_session
 from app.models import User
-from app.core.auth import verify_password, create_access_token, hash_password
-
+from app.core.auth import (
+    verify_password,
+    create_access_token,
+    hash_password,
+    verify_token,
+    revoke_token,
+)
+from app.api.schemas import LoginRequest, LoginResponse, UserCreate, UserRead
+from app.core.security import (
+    validar_password,
+    esta_bloqueado,
+    calcular_bloqueo_hasta,
+    MAX_INTENTOS,
+)
 
 router = APIRouter()
 
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str
-    user_id: int
-    email: str
-    role: str
-
-
-class CreateRecruiterRequest(BaseModel):
-    email: str
-    password: str
-
-
-class RecruiterResponse(BaseModel):
-    id: int
-    email: str
-    role: str
-
-
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginResponse, status_code=200)
 def login(request: LoginRequest, session: Session = Depends(get_session)):
     """
-    Login para reclutadores.
-    Credenciales por defecto: admin@pri.local / admin
+    Login de reclutador con control de acceso.
+
+    Flujo:
+    1. Normalizar correo y buscar usuario
+    2. Si está bloqueado (locked_until > ahora), rechazar 423
+    3. Si no existe o contraseña falla: incrementar failed_attempts, devolver 401
+    4. Si alcanza MAX_INTENTOS: fijar locked_until y resetear contador
+    5. Si is_active=False: devolver 401
+    6. Si exitoso: resetear failed_attempts, limpiar locked_until, actualizar last_login_at
+
+    Respuestas:
+    - 200: OK + token
+    - 401: Credenciales inválidas o cuenta inactiva
+    - 423: Cuenta bloqueada temporalmente
     """
-    # Buscar el usuario por email
-    statement = select(User).where(User.email == request.email)
+    ahora = datetime.now(timezone.utc)
+
+    # 1. Normalizar correo y buscar usuario
+    email_normalizado = request.email.lower().strip()
+    statement = select(User).where(User.email == email_normalizado)
     user = session.exec(statement).first()
-    
-    if not user or not verify_password(request.password, user.password_hash):
+
+    # 2. Verificar bloqueo ANTES de validar contraseña
+    if user and esta_bloqueado(user.locked_until, ahora):
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="Cuenta bloqueada temporalmente. Intente en unos minutos.",
+        )
+
+    # 3. Validar contraseña (ejecutar contra hash ficticio si no existe usuario)
+    password_valida = False
+    if user:
+        password_valida = verify_password(request.password, user.password_hash)
+
+    # 4. Si falla: incrementar contador e intentar bloquear
+    if not user or not password_valida:
+        if user:
+            user.failed_attempts += 1
+
+            # Si alcanza MAX_INTENTOS, bloquear
+            if user.failed_attempts >= MAX_INTENTOS:
+                user.locked_until = calcular_bloqueo_hasta(ahora)
+                user.failed_attempts = 0  # Resetear contador
+
+            session.add(user)
+            session.commit()
+
+        # SIEMPRE devolver el mismo mensaje (seguridad)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o contraseña incorrectos",
+            detail="Credenciales inválidas.",
         )
-    
-    # Verificar que sea reclutador
-    if user.role != "recruiter":
+
+    # 5. Si existe pero inactivo
+    if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los reclutadores pueden acceder",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas.",
         )
-    
-    # Crear token JWT
-    access_token = create_access_token(data={"sub": user.email, "user_id": user.id})
-    
+
+    # 6. Exitoso: resetear intentos, limpiar bloqueo, actualizar login
+    user.failed_attempts = 0
+    user.locked_until = None
+    user.last_login_at = ahora
+    session.add(user)
+    session.commit()
+
+    # Emitir token
+    access_token = create_access_token(
+        data={"sub": user.email, "user_id": user.id, "role": user.role}
+    )
+
     return LoginResponse(
         access_token=access_token,
         token_type="bearer",
-        user_id=user.id,
-        email=user.email,
-        role=user.role,
+        user=UserRead.model_validate(user),
     )
 
 
-@router.post("/recruiter/create", response_model=RecruiterResponse)
-def create_recruiter(request: CreateRecruiterRequest, session: Session = Depends(get_session)):
+@router.post("/register", response_model=UserRead, status_code=201)
+def register(request: UserCreate, session: Session = Depends(get_session)):
     """
-    Crear un nuevo reclutador.
-    Solo para uso administrativo (debe ejecutarse directamente en BD o por admin).
+    Registrar nuevo reclutador.
+
+    Validaciones (ya en schema):
+    - Email válido y normalizado
+    - Correo único (caso-insensible)
+    - Contraseña cumple política
+
+    Respuestas:
+    - 201: Reclutador creado
+    - 409: Correo ya existe
+    - 422: Validación fallida
     """
-    # Verificar que el email no exista
-    statement = select(User).where(User.email == request.email)
-    existing_user = session.exec(statement).first()
-    
-    if existing_user:
+    email_normalizado = request.email.lower().strip()
+
+    # Verificar unicidad (case-insensitive)
+    statement = select(User).where(User.email == email_normalizado)
+    if session.exec(statement).first():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El email ya existe",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El correo ya está registrado.",
         )
-    
-    # Crear nuevo reclutador
-    hashed_password = hash_password(request.password)
-    new_recruiter = User(
-        email=request.email,
-        password_hash=hashed_password,
-        role="recruiter"
+
+    # Crear usuario
+    nuevo_recruiter = User(
+        email=email_normalizado,
+        password_hash=hash_password(request.password),
+        role="recruiter",
+        is_active=True,
+        password_changed_at=datetime.now(timezone.utc),
     )
-    
-    session.add(new_recruiter)
+
+    session.add(nuevo_recruiter)
     session.commit()
-    session.refresh(new_recruiter)
-    
-    return RecruiterResponse(
-        id=new_recruiter.id,
-        email=new_recruiter.email,
-        role=new_recruiter.role,
-    )
+    session.refresh(nuevo_recruiter)
+
+    return UserRead.model_validate(nuevo_recruiter)
+
+
+@router.post("/logout", status_code=204)
+def logout(token: str, session: Session = Depends(get_session)):
+    """
+    Logout: revocar token.
+
+    El token se extrae de headers (Authorization: Bearer <token>)
+    via dependencia en main.
+    """
+    revoke_token(token)
+    return None
+

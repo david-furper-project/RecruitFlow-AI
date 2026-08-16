@@ -8,9 +8,14 @@ from sqlmodel import Field, Relationship, SQLModel
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(unique=True, index=True)
-    role: str = Field(default="candidate")  # 'candidate' o 'recruiter'
+    email: str = Field(index=True)  # índice insensible a mayúsculas se crea en migración
+    role: str = Field(default="recruiter")  # 'recruiter' o 'admin'
     password_hash: str
+    is_active: bool = Field(default=True)
+    last_login_at: Optional[datetime] = None
+    failed_attempts: int = Field(default=0)
+    locked_until: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
     candidate_profile: Optional["CandidateProfile"] = Relationship(back_populates="user")
     decisions: List["Decision"] = Relationship(back_populates="user")
