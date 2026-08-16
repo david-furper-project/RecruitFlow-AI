@@ -32,7 +32,12 @@ export default function RecruiterDashboard() {
   const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
 
   // Filter State
-  const [candidateFilter, setCandidateFilter] = useState<'Todos'|'Top 20%'|'Pendientes'|'Descartados'>('Todos');
+  const [candidateFilter, setCandidateFilter] = useState<'Todos'|'Top 20%'>('Todos');
+  const [candidateView, setCandidateView] = useState<'all'|'stage'|'discarded'>('all');
+  const [activeStageId, setActiveStageId] = useState<number | null>(null);
+  
+  const [pipelineStages, setPipelineStages] = useState<any[]>([]);
+  const [pipelineCounts, setPipelineCounts] = useState<any>({});
 
   useEffect(() => {
     loadOffers();
@@ -73,14 +78,36 @@ export default function RecruiterDashboard() {
   const loadMatches = async (offerId: number) => {
     setLoadingMatches(true);
     try {
-      const data = await apiClient.getMatches(offerId);
-      setMatches(data.matches);
+      // By default get candidates based on the active view
+      let stageId = undefined;
+      let outcome = undefined;
+      
+      if (candidateView === 'stage') {
+        stageId = activeStageId !== null ? activeStageId : undefined;
+      } else if (candidateView === 'discarded') {
+        outcome = 'descartado';
+      }
+      
+      // If we only want top 20%, we can filter in the frontend or backend.
+      // The backend getCandidates doesn't accept Top20% filter directly yet unless we pass top_percent, but the UI is simpler if we fetch all for the tab and filter frontend.
+      
+      const data = await apiClient.getCandidates(offerId, stageId, outcome);
+      setMatches(data.candidates || []);
+      setPipelineStages(data.stages || []);
+      setPipelineCounts(data.counts || {});
     } catch (err) {
       console.error(err);
     } finally {
       setLoadingMatches(false);
     }
   };
+  
+  // Reload when candidateView changes
+  useEffect(() => {
+    if (selectedOffer) {
+      loadMatches(selectedOffer.id);
+    }
+  }, [candidateView, activeStageId]);
 
   const handleExtractTechStack = async () => {
     const textToAnalyze = `${newOffer.description} ${newOffer.requirements}`.trim();
@@ -180,7 +207,17 @@ export default function RecruiterDashboard() {
     }
 
     try {
-      await apiClient.updateApplicationStatus(selectedOffer.id, candidateId, status, discrepancyReason);
+      // Use makeDecision instead of updateApplicationStatus
+      // Map legacy status to actions
+      let action = 'avanzar';
+      if (status === 'rejected') action = 'descartar';
+      if (status === 'reservar') action = 'reservar';
+      
+      // We need applicationId! matches has application_id
+      const match = matches.find(m => m.candidate_id === candidateId);
+      if (!match) return;
+      
+      await apiClient.makeDecision(match.application_id, action, discrepancyReason);
       loadMatches(selectedOffer.id);
     } catch (err) {
       console.error(err);
@@ -188,16 +225,8 @@ export default function RecruiterDashboard() {
     }
   };
 
-  const countTodos = matches.length;
-  const countTop20 = matches.filter(m => (m.match_percentage || 0) >= 80).length;
-  const countPendientes = matches.filter(m => m.status === 'pending' || !m.status).length;
-  const countDescartados = matches.filter(m => m.status === 'rejected').length;
-
   const filteredMatches = matches.filter(match => {
-    if (candidateFilter === 'Todos') return true;
-    if (candidateFilter === 'Top 20%') return (match.match_percentage || 0) >= 80;
-    if (candidateFilter === 'Pendientes') return match.status === 'pending' || !match.status;
-    if (candidateFilter === 'Descartados') return match.status === 'rejected';
+    if (candidateFilter === 'Top 20%') return (match.similarity_score || 0) >= 0.8;
     return true;
   });
 
@@ -362,43 +391,71 @@ export default function RecruiterDashboard() {
           ) : (
             <div>
               {/* PANTALLA 2: Candidatos */}
-              <div className="flex justify-between items-end mb-6 border-b border-gray-200 pb-4 mt-4">
-                <div>
-                  <div className="text-sm text-gray-400 font-medium mb-4 cursor-pointer hover:text-gray-600 flex items-center gap-2" onClick={() => { setSelectedOffer(null); setIsUploading(false); }}>
-                    Volver a vacantes · {selectedOffer.title}
+              <div className="flex flex-col gap-4 mb-6 mt-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-sm text-gray-400 font-medium mb-2 cursor-pointer hover:text-gray-600 flex items-center gap-2" onClick={() => { setSelectedOffer(null); setIsUploading(false); }}>
+                      Volver a vacantes · {selectedOffer.title}
+                    </div>
+                    <h1 className="text-2xl font-bold text-[#b91c1c]">Candidatos ({filteredMatches.length})</h1>
                   </div>
-                  <h1 className="text-2xl font-bold text-[#b91c1c]">Candidatos ({filteredMatches.length})</h1>
                 </div>
-                <div className="flex gap-4 items-center">
-                  <div className="flex bg-gray-100 rounded-sm overflow-hidden border border-gray-200 shadow-sm hidden md:flex">
-                    {(['Todos', 'Top 20%', 'Pendientes', 'Descartados'] as const).map(filter => {
-                      const count = filter === 'Todos' ? countTodos : filter === 'Top 20%' ? countTop20 : filter === 'Pendientes' ? countPendientes : countDescartados;
-                      return (
+
+                <div className="flex flex-col gap-4 w-full border-b border-gray-200 pb-4">
+                  {/* Pipeline Stages Tabs */}
+                  <div className="flex gap-2 w-full overflow-x-auto">
+                    <button
+                      onClick={() => { setCandidateView('all'); setActiveStageId(null); }}
+                      className={`px-4 py-2 font-bold text-sm whitespace-nowrap border-b-2 transition-colors ${candidateView === 'all' ? 'border-[#b91c1c] text-[#b91c1c]' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                    >
+                      Todos ({pipelineCounts.all_active || 0})
+                    </button>
+                    {pipelineStages.map(stage => (
+                      <button
+                        key={stage.id}
+                        onClick={() => { setCandidateView('stage'); setActiveStageId(stage.id); }}
+                        className={`px-4 py-2 font-bold text-sm whitespace-nowrap border-b-2 transition-colors ${candidateView === 'stage' && activeStageId === stage.id ? 'border-[#b91c1c] text-[#b91c1c]' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                      >
+                        {stage.name} ({stage.count || 0})
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => { setCandidateView('discarded'); setActiveStageId(null); }}
+                      className={`px-4 py-2 font-bold text-sm whitespace-nowrap border-b-2 transition-colors ${candidateView === 'discarded' ? 'border-[#b91c1c] text-[#b91c1c]' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                    >
+                      Descartados ({pipelineCounts.discarded || 0})
+                    </button>
+                  </div>
+                  
+                  {/* Filters & Actions row */}
+                  <div className="flex justify-between items-center w-full">
+                    <div className="flex bg-gray-100 rounded-sm overflow-hidden border border-gray-200 shadow-sm hidden md:flex">
+                      {(['Todos', 'Top 20%'] as const).map(filter => (
                         <button 
                           key={filter}
                           onClick={() => setCandidateFilter(filter)}
-                          className={`px-6 py-2 font-medium text-xs border-l border-gray-200 transition-colors ${candidateFilter === filter ? 'bg-[#b91c1c] text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+                          className={`px-6 py-2 font-medium text-xs border-l border-gray-200 transition-colors ${candidateFilter === filter ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
                         >
-                          {filter} {count > 0 ? `(${count})` : ''}
+                          {filter}
                         </button>
-                      )
-                    })}
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setIsUploading(!isUploading)}
-                      className="bg-[#f59e0b] text-black font-bold text-xs px-6 py-2.5 rounded-sm shadow-sm hover:bg-amber-400 transition-colors"
-                    >
-                      {isUploading ? 'Cancelar' : '+ Cargar CVs'}
-                    </button>
-                    {selectedOffer.status !== 'closed' && (
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
                       <button 
-                        onClick={() => setIsClosingOffer(true)}
-                        className="bg-red-900 text-white font-bold text-xs px-6 py-2.5 rounded-sm shadow-sm hover:bg-red-700 transition-colors"
+                        onClick={() => setIsUploading(!isUploading)}
+                        className="bg-[#f59e0b] text-black font-bold text-xs px-6 py-2.5 rounded-sm shadow-sm hover:bg-amber-400 transition-colors"
                       >
-                        Cerrar Vacante
+                        {isUploading ? 'Cancelar' : '+ Cargar CVs'}
                       </button>
-                    )}
+                      {selectedOffer.status !== 'closed' && (
+                        <button 
+                          onClick={() => setIsClosingOffer(true)}
+                          className="bg-red-900 text-white font-bold text-xs px-6 py-2.5 rounded-sm shadow-sm hover:bg-red-700 transition-colors"
+                        >
+                          Cerrar Vacante
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -453,7 +510,7 @@ export default function RecruiterDashboard() {
                         </tr>
                       ) : (
                         filteredMatches.map((match, idx) => {
-                          const matchScore = match.match_percentage || 0;
+                          const matchScore = match.similarity_score !== undefined ? Math.round(match.similarity_score * 100) : 0;
                           const isHigh = matchScore >= 80;
                           const initials = match.full_name ? match.full_name.substring(0, 2).toUpperCase() : 'CA';
                           return (
@@ -476,19 +533,25 @@ export default function RecruiterDashboard() {
                               <td className="p-4 text-center">
                                 <div className="flex justify-center items-center gap-2">
                                   <button onClick={() => setSelectedCandidate(match)} className="bg-[#b91c1c] text-white text-xs px-4 py-2 font-bold hover:bg-red-800 transition-colors rounded-sm shadow-sm">Ver</button>
-                                  {match.status === 'rejected' ? (
+                                  {match.outcome === 'descartado' ? (
                                     <div className="flex items-center gap-1 text-xs px-3 py-1 font-bold text-gray-500 bg-gray-100 rounded-full cursor-not-allowed">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                       Descartado
                                     </div>
-                                  ) : match.status === 'reviewed' || match.status === 'advanced' ? (
+                                  ) : match.outcome === 'contratado' ? (
                                     <div className="flex items-center gap-1 text-xs px-3 py-1 font-bold text-green-700 bg-green-100 rounded-full">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                      Avanzado
+                                      Contratado
+                                    </div>
+                                  ) : match.outcome === 'reservado' ? (
+                                    <div className="flex items-center gap-1 text-xs px-3 py-1 font-bold text-blue-700 bg-blue-100 rounded-full">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                      Reservado
                                     </div>
                                   ) : (
                                     <>
-                                      <button onClick={() => handleUpdateStatus(match.candidate_id, 'rejected')} className="bg-white text-[#b91c1c] border border-[#b91c1c] text-xs px-4 py-2 font-bold hover:bg-red-50 transition-colors rounded-sm shadow-sm">Eliminar</button>
+                                      <button onClick={() => handleUpdateStatus(match.candidate_id, 'rejected')} className="bg-white text-[#b91c1c] border border-[#b91c1c] text-xs px-4 py-2 font-bold hover:bg-red-50 transition-colors rounded-sm shadow-sm">Descartar</button>
+                                      <button onClick={() => handleUpdateStatus(match.candidate_id, 'reservar')} className="bg-[#1e40af] text-white text-xs px-4 py-2 font-bold hover:bg-blue-800 transition-colors rounded-sm shadow-sm">Reservar</button>
                                       <button onClick={() => handleUpdateStatus(match.candidate_id, 'advanced')} className="bg-[#f59e0b] text-black text-xs px-4 py-2 font-bold hover:bg-amber-400 transition-colors rounded-sm shadow-sm">Avanzar</button>
                                     </>
                                   )}

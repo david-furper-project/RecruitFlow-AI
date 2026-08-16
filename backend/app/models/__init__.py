@@ -66,20 +66,34 @@ class JobOffer(SQLModel, table=True):
 
     company: Company = Relationship(back_populates="job_offers")
     applications: List["Application"] = Relationship(back_populates="job_offer")
+    stages: List["PipelineStage"] = Relationship(back_populates="job_offer", cascade_delete=True)
+
+class PipelineStage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_offer_id: int = Field(foreign_key="joboffer.id")
+    name: str = Field(max_length=60)
+    order_index: int
+    kind: str = Field(default="proceso", max_length=15)
+
+    job_offer: "JobOffer" = Relationship(back_populates="stages")
+    applications: List["Application"] = Relationship(back_populates="current_stage")
 
 
 class Application(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     candidate_id: int = Field(foreign_key="candidateprofile.id")
     job_offer_id: Optional[int] = Field(default=None, foreign_key="joboffer.id")
-    status: str = Field(default="pending")  # 'pending', 'reviewed', 'rejected', 'accepted', 'deleted'
+    status: str = Field(default="pending")  # Legacy, will be replaced by current_stage_id + outcome conceptually
+    current_stage_id: Optional[int] = Field(default=None, foreign_key="pipelinestage.id")
+    outcome: Optional[str] = Field(default=None, max_length=15)
     similarity_score: Optional[float] = None
     consent_given_at: Optional[datetime] = None
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     candidate: CandidateProfile = Relationship(back_populates="applications")
-    job_offer: JobOffer = Relationship(back_populates="applications")
+    job_offer: "JobOffer" = Relationship(back_populates="applications")
+    current_stage: Optional[PipelineStage] = Relationship(back_populates="applications")
     evaluations: List["Evaluation"] = Relationship(back_populates="application")
     decisions: List["Decision"] = Relationship(back_populates="application")
     notifications: List["Notification"] = Relationship(back_populates="application")
@@ -107,9 +121,13 @@ class Decision(SQLModel, table=True):
     action: str = Field(max_length=25)
     discrepancy_reason: Optional[str] = None
     decided_at: datetime = Field(default_factory=datetime.utcnow)
+    from_stage_id: Optional[int] = Field(default=None, foreign_key="pipelinestage.id")
+    to_stage_id: Optional[int] = Field(default=None, foreign_key="pipelinestage.id")
 
     application: Application = Relationship(back_populates="decisions")
     user: User = Relationship(back_populates="decisions")
+    from_stage: Optional[PipelineStage] = Relationship(sa_relationship_kwargs={"foreign_keys": "Decision.from_stage_id"})
+    to_stage: Optional[PipelineStage] = Relationship(sa_relationship_kwargs={"foreign_keys": "Decision.to_stage_id"})
 
 
 class Notification(SQLModel, table=True):

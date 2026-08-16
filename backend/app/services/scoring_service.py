@@ -147,11 +147,19 @@ def evaluate_application(session: Session, application_id: int) -> Dict[str, Any
 
 def register_decision(session: Session, application_id: int, user_id: int, action: str, discrepancy_reason: Optional[str]) -> Decision:
     if action not in {"avanzar", "descartar", "reservar"}:
-        raise ValueError("Action no válido")
+        raise ValueError(f"Action '{action}' no válido")
 
     application = session.get(Application, application_id)
     if application is None:
         raise ValueError("Application not found")
+        
+    if action in {"avanzar", "reservar"} and application.outcome is not None:
+        raise ValueError("No se puede avanzar ni reservar una postulación que ya tiene un resultado final.")
+
+    from app.models import PipelineStage
+    current_stage = session.get(PipelineStage, application.current_stage_id)
+    if not current_stage:
+        raise ValueError("La postulación no tiene una etapa actual válida.")
 
     evaluation = session.exec(
         select(Evaluation)
@@ -164,27 +172,43 @@ def register_decision(session: Session, application_id: int, user_id: int, actio
         allowed_by_category = {
             "apto": {"avanzar", "reservar"},
             "en_revision": {"avanzar", "reservar", "descartar"},
-            "no_apto": {"descartar", "reservar"},
+            "no_apto": {"descartar"},
         }
         if action not in allowed_by_category.get(category, set()):
             if discrepancy_reason is None or not discrepancy_reason.strip():
                 raise ValueError("Se requiere discrepancy_reason cuando la decisión contradice la sugerencia.")
+
+    from_stage_id = current_stage.id
+    to_stage_id = current_stage.id
+
+    if action == "avanzar":
+        if current_stage.kind == "final":
+            raise ValueError("No se puede avanzar desde la etapa final.")
+        next_stage = session.exec(
+            select(PipelineStage)
+            .where(PipelineStage.job_offer_id == application.job_offer_id, PipelineStage.order_index > current_stage.order_index)
+            .order_by(PipelineStage.order_index.asc())
+        ).first()
+        if not next_stage:
+            raise ValueError("No hay más etapas disponibles para avanzar.")
+        to_stage_id = next_stage.id
+        application.current_stage_id = to_stage_id
+        if next_stage.kind == "final":
+            application.outcome = "contratado"
+    elif action == "descartar":
+        application.outcome = "descartado"
+    elif action == "reservar":
+        application.outcome = "reservado"
 
     decision = Decision(
         application_id=application_id,
         user_id=user_id,
         action=action,
         discrepancy_reason=discrepancy_reason,
+        from_stage_id=from_stage_id,
+        to_stage_id=to_stage_id,
     )
     session.add(decision)
-
-    if action == "avanzar":
-        application.status = "reviewed"
-    elif action == "descartar":
-        application.status = "rejected"
-    else:
-        application.status = "accepted"
-
     session.add(application)
     session.commit()
     session.refresh(decision)
@@ -198,8 +222,7 @@ def ensure_final_status_has_decision(session: Session, application_id: int) -> N
     application = session.get(Application, application_id)
     if application is None:
         raise ValueError("Application not found")
-    final_states = {"reviewed", "rejected", "accepted"}
-    if application.status in final_states:
+    if application.outcome is not None:
         decision = session.exec(
             select(Decision)
             .where(Decision.application_id == application_id)
@@ -209,11 +232,25 @@ def ensure_final_status_has_decision(session: Session, application_id: int) -> N
             raise ValueError("Ninguna postulación puede alcanzar un estado final sin una fila en decision.")
 
 
-def get_application_ranking(session: Session, job_offer_id: int) -> List[Dict[str, Any]]:
+def get_application_ranking(
+    session: Session, 
+    job_offer_id: int, 
+    stage_id: Optional[int] = None, 
+    outcome: Optional[str] = None,
+    top_percent: Optional[int] = None,
+    source: Optional[str] = None
+) -> Dict[str, Any]:
+    from app.models import PipelineStage
     offer = session.get(JobOffer, job_offer_id)
     if not offer:
         raise ValueError("Job offer not found")
 
+    stages_db = session.exec(
+        select(PipelineStage)
+        .where(PipelineStage.job_offer_id == job_offer_id)
+        .order_by(PipelineStage.order_index)
+    ).all()
+    
     rows = session.exec(
         select(Application, CandidateProfile, Evaluation)
         .join(CandidateProfile, CandidateProfile.id == Application.candidate_id)
@@ -222,16 +259,71 @@ def get_application_ranking(session: Session, job_offer_id: int) -> List[Dict[st
         .order_by(Application.similarity_score.desc())
     ).all()
 
+    stages_response = [{"id": s.id, "name": s.name, "order_index": s.order_index, "kind": s.kind, "count": 0} for s in stages_db]
+    stages_map = {s["id"]: s for s in stages_response}
+    
+    discarded_count = 0
+    hired_count = 0
+    all_active_count = 0
+    
+    filtered_rows = []
+    
+    total_for_percent = len([r for r in rows if r[0].outcome is None])
+    cutoff_index = int(total_for_percent * (top_percent / 100.0)) if top_percent else len(rows)
+    
+    active_idx = 0
+    for app, cand, ev in rows:
+        if app.outcome == "descartado":
+            discarded_count += 1
+        elif app.outcome == "contratado":
+            hired_count += 1
+        else:
+            all_active_count += 1
+            if app.current_stage_id in stages_map:
+                stages_map[app.current_stage_id]["count"] += 1
+                
+        passes = True
+        if outcome is not None:
+            if app.outcome != outcome:
+                passes = False
+        else:
+            # If no outcome filter, usually exclude discarded and hired unless specified
+            if app.outcome is not None:
+                passes = False
+                
+        if stage_id and app.current_stage_id != stage_id:
+            passes = False
+            
+        is_top = False
+        if app.outcome is None:
+            if top_percent:
+                if active_idx < cutoff_index:
+                    is_top = True
+            else:
+                is_top = True
+            active_idx += 1
+        
+        if top_percent and not is_top:
+            passes = False
+
+        if passes:
+            filtered_rows.append((app, cand, ev))
+
     ranked_rows = []
-    for application, candidate, evaluation in rows:
+    for app, cand, ev in filtered_rows:
         ranked_rows.append({
-            "application_id": application.id,
-            "candidate_id": candidate.id,
-            "full_name": candidate.full_name,
-            "similarity_score": application.similarity_score,
-            "suggested_category": evaluation.suggested_category if evaluation else "no_apto",
-            "explanation": evaluation.explanation if evaluation else "Sin evaluación",
-            "interview_questions": evaluation.interview_questions if evaluation else None,
+            "application_id": app.id,
+            "candidate_id": cand.id,
+            "full_name": cand.full_name,
+            "similarity_score": app.similarity_score,
+            "suggested_category": ev.suggested_category if ev else "no_apto",
+            "explanation": ev.explanation if ev else "Sin evaluación",
+            "interview_questions": ev.interview_questions if ev else None,
+            "status": app.status,
+            "current_stage_id": app.current_stage_id,
+            "outcome": app.outcome,
+            "career_summary": cand.career_summary,
+            "tech_stack": cand.tech_stack,
         })
 
     total = len(ranked_rows)
@@ -239,4 +331,13 @@ def get_application_ranking(session: Session, job_offer_id: int) -> List[Dict[st
         row["rank_position"] = index
         row["percentile"] = round(((total - index) / total) * 100, 2) if total else 0.0
 
-    return ranked_rows
+    return {
+        "job_offer_id": job_offer_id,
+        "stages": stages_response,
+        "counts": {
+            "all_active": all_active_count,
+            "discarded": discarded_count,
+            "hired": hired_count
+        },
+        "candidates": ranked_rows
+    }

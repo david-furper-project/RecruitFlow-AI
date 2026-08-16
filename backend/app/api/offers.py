@@ -48,7 +48,18 @@ def create_offer(offer: JobOfferCreate, session: Session = Depends(get_session))
     session.commit()
     session.refresh(db_offer)
     
-    return db_offer
+    from app.models import PipelineStage
+    default_stages = [
+        PipelineStage(job_offer_id=db_offer.id, name="Pendiente", order_index=1, kind="inicial"),
+        PipelineStage(job_offer_id=db_offer.id, name="Preselección", order_index=2, kind="proceso"),
+        PipelineStage(job_offer_id=db_offer.id, name="Entrevista 1", order_index=3, kind="proceso"),
+        PipelineStage(job_offer_id=db_offer.id, name="Entrevista final", order_index=4, kind="proceso"),
+        PipelineStage(job_offer_id=db_offer.id, name="Finalista", order_index=5, kind="final")
+    ]
+    session.add_all(default_stages)
+    session.commit()
+    
+    return {"message": "Job offer created successfully", "id": db_offer.id}
 
 @router.get("/")
 def get_offers(session: Session = Depends(get_session)):
@@ -202,3 +213,79 @@ def close_offer(
             
     session.commit()
     return {"success": True, "offer_id": offer.id}
+
+
+class StageUpdateItem(BaseModel):
+    id: Optional[int] = None
+    name: str
+    order_index: int
+    kind: str
+
+class StageUpdateRequest(BaseModel):
+    stages: List[StageUpdateItem]
+
+
+@router.get("/{offer_id}/stages")
+def get_stages(offer_id: int, session: Session = Depends(get_session)):
+    from app.models import PipelineStage
+    stages = session.exec(select(PipelineStage).where(PipelineStage.job_offer_id == offer_id).order_by(PipelineStage.order_index)).all()
+    return stages
+
+
+@router.put("/{offer_id}/stages")
+def update_stages(offer_id: int, req: StageUpdateRequest, session: Session = Depends(get_session)):
+    from app.models import PipelineStage, Application
+    new_stages = req.stages
+    
+    # Validation 1: One 'inicial', one 'final'
+    inicial_count = sum(1 for s in new_stages if s.kind == "inicial")
+    final_count = sum(1 for s in new_stages if s.kind == "final")
+    if inicial_count != 1 or final_count != 1:
+        raise HTTPException(status_code=400, detail="Must have exactly one 'inicial' and one 'final' stage.")
+
+    existing_stages = session.exec(select(PipelineStage).where(PipelineStage.job_offer_id == offer_id)).all()
+    existing_map = {s.id: s for s in existing_stages}
+    
+    new_ids = {s.id for s in new_stages if s.id is not None}
+    
+    # Deletions
+    to_delete = []
+    for s_id, s in existing_map.items():
+        if s_id not in new_ids:
+            # Check for candidates
+            candidate_count = session.exec(select(Application).where(Application.current_stage_id == s_id)).all()
+            if len(candidate_count) > 0:
+                raise HTTPException(status_code=409, detail=f"Cannot delete stage '{s.name}' because it has {len(candidate_count)} candidates.")
+            session.delete(s)
+            to_delete.append(s)
+
+    # We must flush deletes first to free up any unique constraints on order_index
+    session.flush()
+
+    # Updates and Additions
+    for ns in new_stages:
+        if ns.id and ns.id in existing_map:
+            es = existing_map[ns.id]
+            # Rename is always allowed
+            es.name = ns.name
+            
+            # Reorder requires no candidates
+            if es.order_index != ns.order_index:
+                candidate_count = session.exec(select(Application).where(Application.current_stage_id == ns.id)).all()
+                if len(candidate_count) > 0:
+                    raise HTTPException(status_code=409, detail=f"Cannot reorder stage '{es.name}' because it has {len(candidate_count)} candidates.")
+                es.order_index = ns.order_index
+            es.kind = ns.kind
+            session.add(es)
+        else:
+            # Add
+            new_stage = PipelineStage(
+                job_offer_id=offer_id,
+                name=ns.name,
+                order_index=ns.order_index,
+                kind=ns.kind
+            )
+            session.add(new_stage)
+
+    session.commit()
+    return {"message": "Stages updated"}

@@ -120,4 +120,39 @@ export const apiClient = {
     if (!response.ok) throw new Error('Failed to apply');
     return response.json();
   },
+  getStages: async (offerId: number) => {
+    const res = await fetch(`${BASE_URL}/offers/${offerId}/stages`);
+    if (!res.ok) throw new Error('Error fetching stages');
+    return res.json();
+  },
+  updateStages: async (offerId: number, stages: any[]) => {
+    const res = await fetch(`${BASE_URL}/offers/${offerId}/stages`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stages })
+    });
+    if (!res.ok) throw new Error('Error updating stages');
+    return res.json();
+  },
+  getCandidates: async (offerId: number, stageId?: number, outcome?: string) => {
+    let url = `${BASE_URL}/job-offers/${offerId}/candidates`;
+    const params = new URLSearchParams();
+    if (stageId) params.append('stage_id', stageId.toString());
+    if (outcome) params.append('outcome', outcome);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Error fetching candidates');
+    return res.json();
+  },
+  makeDecision: async (applicationId: number, action: string, discrepancyReason?: string) => {
+    // For MVP, user_id is hardcoded to 1
+    const res = await fetch(`${BASE_URL}/applications/${applicationId}/decision`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 1, action, discrepancy_reason: discrepancyReason })
+    });
+    if (!res.ok) throw new Error('Error making decision');
+    return res.json();
+  },
 };

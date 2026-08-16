@@ -29,9 +29,16 @@ def evaluate_application_endpoint(application_id: int, session: Session = Depend
 
 
 @router.get("/job-offers/{job_offer_id}/candidates")
-def get_candidates_ranking(job_offer_id: int, session: Session = Depends(get_session)):
+def get_candidates_ranking(
+    job_offer_id: int, 
+    stage_id: Optional[int] = None,
+    outcome: Optional[str] = None,
+    top_percent: Optional[int] = None,
+    source: Optional[str] = None,
+    session: Session = Depends(get_session)
+):
     try:
-        return {"job_offer_id": job_offer_id, "candidates": get_application_ranking(session, job_offer_id)}
+        return get_application_ranking(session, job_offer_id, stage_id, outcome, top_percent, source)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -45,12 +52,14 @@ def update_application_decision(application_id: int, payload: DecisionRequest, b
         # Disparar envío asíncrono
         background_tasks.add_task(async_deliver_notification, application_id, payload.action)
         
+        app = session.get(Application, application_id)
         return {
             "message": "Decision recorded successfully",
             "application_id": application_id,
             "decision_id": decision.id,
             "action": decision.action,
-            "status": session.get(Application, application_id).status,
+            "current_stage_id": app.current_stage_id,
+            "outcome": app.outcome,
         }
     except ValueError as exc:
         raise HTTPException(status_code=422 if "requerida" in str(exc) or "Ninguna postulación" in str(exc) else 400, detail=str(exc))
