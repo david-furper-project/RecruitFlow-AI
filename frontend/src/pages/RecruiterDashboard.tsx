@@ -621,7 +621,7 @@ export default function RecruiterDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
                   <p className="font-bold text-gray-500 mb-1 text-xs uppercase tracking-wider">Porcentaje de Match</p>
-                  <p className="text-xl font-bold text-green-700">{selectedCandidate.match_percentage || 0}%</p>
+                  <p className="text-xl font-bold text-green-700">{selectedCandidate.similarity_score !== undefined ? Math.round(selectedCandidate.similarity_score * 100) : 0}%</p>
                 </div>
                 <div>
                   <p className="font-bold text-gray-500 mb-1 text-xs uppercase tracking-wider">Años de Experiencia</p>

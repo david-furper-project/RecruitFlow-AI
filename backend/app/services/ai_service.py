@@ -91,18 +91,19 @@ def extract_structured_profile(raw_text: str, target_role: str = None) -> dict:
             
         prompt = PromptTemplate.from_template(
             "Extrae la siguiente información estructurada en formato JSON puro del siguiente CV. "
+            "Revisa bien todo el documento para encontrar los datos solicitados. "
             "Usa exactamente estas claves en el JSON: "
             "'full_name' (string), "
-            "'email' (string, o 'No especificado'), "
-            "'phone' (string, o 'No especificado'), "
-            "'tech_stack' (string de tecnologías separadas por coma), "
-            "'years_of_experience' (entero, número de años totales, o 0 si no se encuentra), "
-            "'courses_and_diplomas' (string, lista breve de estudios/cursos principales), "
-            "'career_summary' (string breve que resuma su perfil y carrera), "
+            "'email' (string, busca correos electrónicos, o 'No especificado'), "
+            "'phone' (string, busca números de teléfono, o 'No especificado'), "
+            "'tech_stack' (string de tecnologías, lenguajes, frameworks, herramientas separadas por coma), "
+            "'years_of_experience' (entero, deduce el número total de años de experiencia a partir de las fechas o descripciones, o 0 si no hay), "
+            "'courses_and_diplomas' (string, lista de educación formal, certificaciones o cursos), "
+            "'career_summary' (string breve que resuma su perfil, habilidades principales y trayectoria), "
             "'salary_expectation' (string, expectativa salarial si se menciona, o 'No especificada' si no se encuentra).\n"
             f"{role_instruction}\n"
             "CV:\n{text}\n\n"
-            "Responde ÚNICAMENTE con el JSON, sin formato markdown extra."
+            "Responde ÚNICAMENTE con el JSON válido, sin formato markdown extra."
         )
         
         chain = prompt | llm

@@ -116,6 +116,11 @@ async def _process_single_application(
             session.add(app_record)
             session.commit()
             session.refresh(app_record)
+            
+            # Evaluar la postulación inmediatamente para tener el similarity_score
+            from app.services.scoring_service import evaluate_application
+            evaluate_application(session, app_record.id)
+            session.refresh(app_record)
 
     return {
         "status": "processed",
@@ -149,6 +154,7 @@ async def create_application(
 @router.post("/applications/bulk")
 async def bulk_upload_applications(
     background_tasks: BackgroundTasks,
+    offer_id: int = Form(...),
     files: List[UploadFile] = File(...),
     session: Session = Depends(get_session),
 ):
@@ -170,7 +176,7 @@ async def bulk_upload_applications(
                 found_user = session.exec(select(User).where(User.email == email)).first()
                 if found_user is not None:
                     return {"filename": file.filename, "status": "duplicado", "message": "Email duplicado en lote."}
-                result = await _process_single_application(session, file.filename.replace(".pdf", "").replace(".docx", ""), email, None, file)
+                result = await _process_single_application(session, file.filename.replace(".pdf", "").replace(".docx", ""), email, None, file, offer_id)
                 if result.get("status") == "processed" and result.get("application_id"):
                     background_tasks.add_task(async_deliver_notification, result["application_id"], "recepcion")
                 return {"filename": file.filename, **result}
