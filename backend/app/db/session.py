@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -44,6 +44,14 @@ def _install_pgvector_and_constraints() -> None:
                     WHERE table_name = 'notification' AND column_name = 'retry_count'
                 ) THEN
                     ALTER TABLE notification ADD COLUMN retry_count INTEGER DEFAULT 0;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'evaluation' AND column_name = 'interview_questions'
+                ) THEN
+                    ALTER TABLE evaluation ADD COLUMN interview_questions TEXT;
                 END IF;
             END $$;
         """))
@@ -93,6 +101,27 @@ def _install_pgvector_and_constraints() -> None:
         session.commit()
 
 
+def _create_default_admin() -> None:
+    """Crear usuario admin por defecto si no existe."""
+    from app.models import User
+    from app.core.auth import hash_password
+    
+    with Session(engine) as session:
+        # Verificar si el admin ya existe
+        statement = select(User).where(User.email == "admin@pri.local")
+        existing_admin = session.exec(statement).first()
+        
+        if not existing_admin:
+            # Crear admin
+            admin_user = User(
+                email="admin@pri.local",
+                password_hash=hash_password("admin"),
+                role="recruiter"
+            )
+            session.add(admin_user)
+            session.commit()
+
+
 def init_db():
     with Session(engine) as session:
         session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
@@ -100,6 +129,7 @@ def init_db():
 
     SQLModel.metadata.create_all(engine)
     _install_pgvector_and_constraints()
+    _create_default_admin()
 
 
 def get_session():

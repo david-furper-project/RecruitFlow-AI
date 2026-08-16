@@ -40,6 +40,7 @@ def get_application_audit(session: Session, application_id: int) -> Dict[str, An
             "id": evaluation.id if evaluation else None,
             "suggested_category": evaluation.suggested_category if evaluation else None,
             "explanation": evaluation.explanation if evaluation else None,
+            "interview_questions": evaluation.interview_questions if evaluation else None,
             "model_version": evaluation.model_version if evaluation else None,
             "prompt_version": evaluation.prompt_version if evaluation else None,
             "excluded_fields": evaluation.excluded_fields if evaluation else None,

@@ -86,6 +86,7 @@ class Evaluation(SQLModel, table=True):
     application_id: int = Field(foreign_key="application.id", index=True)
     suggested_category: str = Field(max_length=15)
     explanation: Optional[str] = None
+    interview_questions: Optional[str] = None
     model_version: str = Field(max_length=50)
     prompt_version: str = Field(max_length=50)
     excluded_fields: str = Field(max_length=255)

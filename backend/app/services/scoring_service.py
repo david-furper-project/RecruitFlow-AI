@@ -18,6 +18,31 @@ def _determine_category(score: float) -> str:
     return "no_apto"
 
 
+def _build_interview_questions(candidate: CandidateProfile, job_offer: JobOffer) -> str:
+    questions = []
+    required_keywords = [
+        keyword.strip()
+        for keyword in (job_offer.requirements or "").split(",")
+        if keyword.strip()
+    ]
+    if required_keywords:
+        candidate_text = (candidate.tech_stack or "").lower()
+        missing = [keyword for keyword in required_keywords if keyword.lower() not in candidate_text]
+        for keyword in missing[:3]:
+            questions.append(
+                f"¿Podrías contarme más sobre tu experiencia práctica con {keyword} y cómo la has aplicado en proyectos reales?"
+            )
+
+    if not questions:
+        questions.extend([
+            "¿Podrías describir un proyecto reciente en el que hayas trabajado con tecnologías similares a esta vacante?",
+            "¿Qué entregables típicos has liderado en equipos de ingeniería o producto?",
+            "¿Qué te gustaría aprender o profundizar en este rol para sumar a la posición?",
+        ])
+
+    return "\n".join(questions[:5])
+
+
 def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
     if not vec_a or not vec_b or len(vec_a) != len(vec_b):
         return 0.0
@@ -92,11 +117,13 @@ def evaluate_application(session: Session, application_id: int) -> Dict[str, Any
         f"Coincidencias principales: perfil y oferta comparten stack en Python, API y PostgreSQL. "
         f"La afinidad calculada fue {score:.2f}, por lo que la recomendación es {category}."
     )
+    interview_questions = _build_interview_questions(candidate, job_offer)
 
     evaluation = Evaluation(
         application_id=application.id,
         suggested_category=category,
         explanation=explanation,
+        interview_questions=interview_questions,
         model_version=SCORING_MODEL_VERSION,
         prompt_version=SCORING_PROMPT_VERSION,
         excluded_fields="nacionalidad,edad,fecha_nacimiento,fotografia,universidad_egreso,direccion,estado_civil,genero",
@@ -195,14 +222,21 @@ def get_application_ranking(session: Session, job_offer_id: int) -> List[Dict[st
         .order_by(Application.similarity_score.desc())
     ).all()
 
-    result = []
+    ranked_rows = []
     for application, candidate, evaluation in rows:
-        result.append({
+        ranked_rows.append({
             "application_id": application.id,
             "candidate_id": candidate.id,
             "full_name": candidate.full_name,
             "similarity_score": application.similarity_score,
             "suggested_category": evaluation.suggested_category if evaluation else "no_apto",
             "explanation": evaluation.explanation if evaluation else "Sin evaluación",
+            "interview_questions": evaluation.interview_questions if evaluation else None,
         })
-    return result
+
+    total = len(ranked_rows)
+    for index, row in enumerate(ranked_rows, start=1):
+        row["rank_position"] = index
+        row["percentile"] = round(((total - index) / total) * 100, 2) if total else 0.0
+
+    return ranked_rows

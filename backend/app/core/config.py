@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_BYTES: int = 5 * 1024 * 1024
     OPENAI_MODEL: str = "gpt-4o-mini"
 
+    # JWT Authentication
+    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_HOURS: int = 24
+
     class Config:
         env_file = ".env"
 
