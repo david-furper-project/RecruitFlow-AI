@@ -1,0 +1,12 @@
+﻿Archivo de Servicio,Clases Principales,Funciones Expuestas
+ai_service.py,"MockEmbeddings, MockLLM, Response","get_embeddings_client, get_llm, generate_embedding, mock_extract, extract_structured_profile, extract_job_tech_stack, embed_query, invoke"
+s3_service.py,MockS3Client,"get_s3_client, upload_fileobj"
+notification_service.py,,"sendgrid_mailer, ensure_notification_record, deliver_decision_notification, get_notification_completion_rate, get_notifications_for_application, get_decision_without_notification_jobs"
+sourcing_service.py,LinkedInProfileData,"is_linkedin_sourcing_enabled, fetch_linkedin_profile_data, upsert_candidate_from_linkedin"
+email_service.py,,send_status_notification
+pdf_extractor.py,,
+audit_service.py,,get_application_audit
+parsing_service.py,StructuredCandidateProfile,"sanitize_text_for_model, extract_candidate_profile, validate_and_merge_profile, extract_text_from_upload, validate_cv_upload"
+linkedin_service.py,,fetch_linkedin_profile
+storage_service.py,,
+scoring_service.py,,"evaluate_application, register_decision, ensure_final_status_has_decision, get_application_ranking"

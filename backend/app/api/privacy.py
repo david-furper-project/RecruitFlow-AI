@@ -7,6 +7,8 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models import Application, CandidateProfile, PrivacyRequestLog, User
+from app.services.candidate_identity_service import is_internal_candidate_email
+from app.services.resume_version_service import resume_versions_for_candidate
 from app.services.storage_service import delete_cv_file
 
 router = APIRouter()
@@ -44,7 +46,7 @@ def get_candidate_privacy(candidate_id: int, session: Session = Depends(get_sess
         "candidate_id": candidate_id,
         "full_name": candidate.full_name,
         "resume_url": candidate.resume_url,
-        "email": candidate.user.email if candidate.user else None,
+        "email": candidate.user.email if candidate.user and not is_internal_candidate_email(candidate.user.email) else None,
     }
 
 
@@ -72,8 +74,18 @@ async def delete_candidate_privacy(candidate_id: int, session: Session = Depends
     if candidate is None:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
+    # A privacy deletion removes every stored CV version, not only the current
+    # pointer. History is retained for normal updates but never defeats a valid
+    # right-to-erasure request.
+    resume_urls = {
+        version.resume_url
+        for version in resume_versions_for_candidate(session, candidate.id)
+        if version.resume_url
+    }
     if candidate.resume_url:
-        await delete_cv_file(candidate.resume_url)
+        resume_urls.add(candidate.resume_url)
+    for resume_url in resume_urls:
+        await delete_cv_file(resume_url)
 
     user = session.get(User, candidate.user_id)
     if user is not None:

@@ -10,6 +10,11 @@ from app.core.config import settings
 
 async def upload_cv_to_storage(candidate_id: int, original_filename: str, file_bytes: bytes, file_obj: BinaryIO | None = None) -> str:
     ext = os.path.splitext(original_filename or "cv.pdf")[1].lower() or ".pdf"
+    content_type = {
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".pdf": "application/pdf",
+    }.get(ext, "application/octet-stream")
     unique_name = f"cvs/{candidate_id}/{uuid.uuid4()}{ext}"
 
     if settings.AWS_ACCESS_KEY_ID == "mock_access_key":
@@ -32,7 +37,7 @@ async def upload_cv_to_storage(candidate_id: int, original_filename: str, file_b
         file_obj or io.BytesIO(file_bytes),
         settings.AWS_BUCKET_NAME,
         unique_name,
-        ExtraArgs={"ContentType": "application/pdf"},
+        ExtraArgs={"ContentType": content_type},
     )
     return f"https://{settings.AWS_BUCKET_NAME}.s3.{settings.AWS_REGION_NAME}.amazonaws.com/{unique_name}"
 

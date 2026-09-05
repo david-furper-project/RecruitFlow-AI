@@ -1,0 +1,31 @@
+﻿URL Completa (Postman),Metodo,Nombre Endpoint,Ruta Interna,Tags
+http://localhost:8000/api/health,GET,Health Check,/api/health,
+http://localhost:8000/api/auth/login,POST,Login,/api/auth/login,auth
+http://localhost:8000/api/auth/register,POST,Register,/api/auth/register,auth
+http://localhost:8000/api/auth/logout,POST,Logout,/api/auth/logout,auth
+http://localhost:8000/api/candidates/applications,POST,Create Application,/api/candidates/applications,candidates
+http://localhost:8000/api/candidates/applications/bulk,POST,Bulk Upload Applications,/api/candidates/applications/bulk,candidates
+http://localhost:8000/api/candidates/apply,POST,Legacy Apply,/api/candidates/apply,candidates
+http://localhost:8000/api/candidates/{candidate_id}/upload-cv,POST,Upload Cv Legacy,/api/candidates/{candidate_id}/upload-cv,candidates
+http://localhost:8000/api/offers/,GET,Get Offers,/api/offers/,offers
+http://localhost:8000/api/offers/,POST,Create Offer,/api/offers/,offers
+http://localhost:8000/api/offers/{offer_id}/match,GET,Match Candidates,/api/offers/{offer_id}/match,offers
+http://localhost:8000/api/offers/{offer_id}/application/{candidate_id}/status,PUT,Update Application Status,/api/offers/{offer_id}/application/{candidate_id}/status,offers
+http://localhost:8000/api/offers/extract-tech-stack,POST,Extract Tech Stack Endpoint,/api/offers/extract-tech-stack,offers
+http://localhost:8000/api/offers/{offer_id}/close,PUT,Close Offer,/api/offers/{offer_id}/close,offers
+http://localhost:8000/api/recruiter/scrape-linkedin,POST,Mock Scrape Linkedin,/api/recruiter/scrape-linkedin,recruiter
+http://localhost:8000/api/recruiter/sourcing/linkedin,POST,Sourcing Linkedin,/api/recruiter/sourcing/linkedin,recruiter
+http://localhost:8000/api/recruiter/save-candidate,POST,Save Scraped Candidate,/api/recruiter/save-candidate,recruiter
+http://localhost:8000/api/companies/,GET,List Companies,/api/companies/,companies
+http://localhost:8000/api/companies/,POST,Create Company,/api/companies/,companies
+http://localhost:8000/api/applications/{application_id}/evaluate,POST,Evaluate Application Endpoint,/api/applications/{application_id}/evaluate,scoring
+http://localhost:8000/api/job-offers/{job_offer_id}/candidates,GET,Get Candidates Ranking,/api/job-offers/{job_offer_id}/candidates,scoring
+http://localhost:8000/api/applications/{application_id}/decision,PATCH,Update Application Decision,/api/applications/{application_id}/decision,scoring
+http://localhost:8000/api/applications/{application_id}/audit,GET,Application Audit,/api/applications/{application_id}/audit,scoring
+http://localhost:8000/api/notifications/completion-rate,GET,Notification Completion Rate,/api/notifications/completion-rate,scoring
+http://localhost:8000/api/privacy/candidates/{candidate_id}/consent,POST,Save Consent,/api/privacy/candidates/{candidate_id}/consent,privacy
+http://localhost:8000/api/privacy/candidates/{candidate_id}/privacy,GET,Get Candidate Privacy,/api/privacy/candidates/{candidate_id}/privacy,privacy
+http://localhost:8000/api/privacy/candidates/{candidate_id}/privacy,PATCH,Update Candidate Privacy,/api/privacy/candidates/{candidate_id}/privacy,privacy
+http://localhost:8000/api/privacy/candidates/{candidate_id}/privacy,DELETE,Delete Candidate Privacy,/api/privacy/candidates/{candidate_id}/privacy,privacy
+http://localhost:8000/api/privacy/privacy-requests,POST,Create Privacy Request,/api/privacy/privacy-requests,privacy
+http://localhost:8000/,GET,Root,/,

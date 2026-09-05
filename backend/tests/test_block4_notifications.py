@@ -67,7 +67,14 @@ def seeded_decision():
 def test_decision_notification_is_logged_and_sent(seeded_decision, monkeypatch):
     session, _, decision = seeded_decision
 
-    monkeypatch.setattr("app.services.notification_service.sendgrid_mailer", lambda *args, **kwargs: True)
+    class MockMailProvider:
+        def send(self, to: str, subject: str, html: str) -> str:
+            return "mock-id-123"
+            
+    def mock_get_provider():
+        return MockMailProvider()
+        
+    monkeypatch.setattr("app.services.mail.get_mail_provider", mock_get_provider)
 
     notification = deliver_decision_notification(session, decision.id)
 
@@ -80,10 +87,15 @@ def test_decision_notification_is_logged_and_sent(seeded_decision, monkeypatch):
 def test_decision_notification_retries_and_fails_after_three_attempts(seeded_decision, monkeypatch):
     session, _, decision = seeded_decision
 
-    def failing_send(*args, **kwargs):
-        raise RuntimeError("SendGrid unavailable")
-
-    monkeypatch.setattr("app.services.notification_service.sendgrid_mailer", failing_send)
+    class MockMailProvider:
+        def send(self, to: str, subject: str, html: str) -> str:
+            from app.services.mail import MailError
+            raise MailError("Simulated error")
+            
+    def mock_get_provider():
+        return MockMailProvider()
+        
+    monkeypatch.setattr("app.services.mail.get_mail_provider", mock_get_provider)
 
     notification = deliver_decision_notification(session, decision.id)
 
@@ -94,7 +106,14 @@ def test_decision_notification_retries_and_fails_after_three_attempts(seeded_dec
 def test_notification_completion_rate_is_calculated(seeded_decision, monkeypatch):
     session, _, decision = seeded_decision
 
-    monkeypatch.setattr("app.services.notification_service.sendgrid_mailer", lambda *args, **kwargs: True)
+    class MockMailProvider:
+        def send(self, to: str, subject: str, html: str) -> str:
+            return "mock-id-123"
+            
+    def mock_get_provider():
+        return MockMailProvider()
+        
+    monkeypatch.setattr("app.services.mail.get_mail_provider", mock_get_provider)
     send_ok = deliver_decision_notification(session, decision.id)
     send_ok.sent_at = send_ok.sent_at or send_ok.created_at
 

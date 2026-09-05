@@ -15,7 +15,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = "mock_gemini_key"
     USE_MOCK_AI: bool = False
 
-    # SendGrid
+    # Mail Provider
+    MAIL_PROVIDER: str = "mailpit"
+    MAIL_FROM_EMAIL: str = "noreply@pri.local"
+    MAIL_FROM_NAME: str = "PRI - Reclutamiento"
+    BREVO_API_KEY: str = "mock_brevo_key"
+
+    # SendGrid (Legacy/Fallback)
     SENDGRID_API_KEY: str = "mock_sendgrid_key"
     SENDER_EMAIL: str = "noreply@pri.local"
 
@@ -24,10 +30,16 @@ class Settings(BaseSettings):
     LINKEDIN_CLIENT_SECRET: str = "mock_linkedin_secret"
     LINKEDIN_REDIRECT_URI: str = "http://localhost:5173/linkedin/callback"
     LINKEDIN_SOURCING_ENABLED: bool = True
+    SOURCING_INVITATION_BASE_URL: str = "http://localhost:5173/invitations"
 
     # Candidate capture
-    MAX_UPLOAD_SIZE_BYTES: int = 5 * 1024 * 1024
+    MAX_UPLOAD_SIZE_BYTES: int = 3 * 1024 * 1024
     OPENAI_MODEL: str = "gpt-4o-mini"
+
+    # JWT Authentication
+    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_HOURS: int = 8
 
     class Config:
         env_file = ".env"
