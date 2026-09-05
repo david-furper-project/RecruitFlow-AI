@@ -24,7 +24,11 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verificar contraseña contra su hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except (TypeError, ValueError):
+        # Registros heredados o incompletos no deben convertir el login en un 500.
+        return False
 
 
 def create_access_token(
@@ -108,4 +112,3 @@ def revoke_token(token: str) -> None:
             REVOKED_TOKENS.add(jti)
     except JWTError:
         pass  # Token inválido, ignorar
-

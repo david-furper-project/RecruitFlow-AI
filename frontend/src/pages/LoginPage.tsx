@@ -5,6 +5,18 @@ import { Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // Validación de política de contraseña (cliente)
 const PASSWORD_MIN_LEN = 12;
+const LOGIN_TIMEOUT_MS = 12_000;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || `http://${window.location.hostname || 'localhost'}:8000/api`;
+
+async function readApiResponse(response: Response): Promise<Record<string, unknown>> {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const message = await response.text();
+    throw new Error(message || `El servidor respondió con estado ${response.status}.`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
 
 interface PasswordRequirement {
   label: string;
@@ -53,22 +65,27 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError('');
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+
     try {
-      const response = await fetch('http://localhost:8000/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email,
+          email: email.trim().toLowerCase(),
           password,
         }),
       });
 
-      const data = await response.json();
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         if (response.status === 423) {
@@ -76,34 +93,49 @@ export default function LoginPage() {
         } else if (response.status === 401) {
           setError('Credenciales inválidas.');
         } else {
-          setError(data.detail || 'Error en el login');
+          setError(typeof data.detail === 'string' ? data.detail : 'Error en el login');
         }
         return;
       }
 
+      if (typeof data.access_token !== 'string' || !data.user || typeof data.user !== 'object') {
+        throw new Error('La respuesta del servidor no contiene una sesión válida.');
+      }
+      const user = data.user as { id?: unknown; email?: unknown; role?: unknown };
+      if (typeof user.id !== 'number' || typeof user.email !== 'string' || typeof user.role !== 'string') {
+        throw new Error('La respuesta del servidor no contiene un usuario válido.');
+      }
+
       // Guardar en el store
       login(data.access_token, {
-        id: data.user.id,
-        email: data.user.email,
-        role: data.user.role,
+        id: user.id,
+        email: user.email,
+        role: user.role,
       });
 
       // Redirigir al dashboard del reclutador
-      navigate('/recruiter');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      navigate('/recruiter', { replace: true });
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('El servidor tardó demasiado en responder. Verifica que el backend y PostgreSQL estén activos.');
+      } else if (err instanceof TypeError) {
+        setError(`No se pudo conectar con la API en ${API_BASE_URL}. Verifica que el backend esté activo.`);
+      } else {
+        setError(err instanceof Error ? err.message : 'Error desconocido');
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-3 sm:p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-xl p-8">
+        <div className="rounded-2xl bg-white p-5 shadow-xl sm:p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">PRI MVP</h1>
+            <h1 className="mb-2 text-2xl font-bold text-gray-900 sm:text-3xl">PRI MVP</h1>
             <p className="text-gray-600">Portal de Reclutadores (Bloque 6)</p>
           </div>
 

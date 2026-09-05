@@ -1,11 +1,11 @@
 from app.core.config import settings
-from .base import MailProvider
+from .base import MailError, MailProvider
 from .sendgrid_provider import SendGridProvider
 from .brevo_provider import BrevoProvider
 from .mailpit_provider import MailpitProvider
 
 def get_mail_provider() -> MailProvider:
-    provider = settings.MAIL_PROVIDER.lower()
+    provider = settings.MAIL_PROVIDER.strip().lower()
     
     if provider == "brevo":
         return BrevoProvider()
@@ -13,6 +13,4 @@ def get_mail_provider() -> MailProvider:
         return SendGridProvider()
     elif provider == "mailpit":
         return MailpitProvider()
-    else:
-        # Default fallback
-        return MailpitProvider()
+    raise MailError(f"Proveedor de correo no soportado: {settings.MAIL_PROVIDER}.")

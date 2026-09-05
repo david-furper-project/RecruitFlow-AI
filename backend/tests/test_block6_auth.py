@@ -67,7 +67,7 @@ class TestPasswordPolicy:
     def test_password_muy_corta(self):
         """11 caracteres: rechazada."""
         with pytest.raises(ValueError, match="entre 12 y 128 caracteres"):
-            validar_password("Short1234567", "user@test.com")
+            validar_password("Short123456", "user@test.com")
 
     def test_password_muy_larga(self):
         """129 caracteres: rechazada."""
@@ -145,6 +145,10 @@ class TestPasswordStorage:
         otra = "OtherPassword123"
         hashed = hash_password(pwd)
         assert verify_password(otra, hashed) is False
+
+    def test_hash_heredado_invalido_no_rompe_login(self):
+        """Un hash inválido se trata como credencial incorrecta, no como error 500."""
+        assert verify_password("AnyPassword123", "mock_hash") is False
 
 
 # ============= PRUEBAS DE CONTROL DE ACCESO =============
@@ -255,7 +259,7 @@ class TestJWTSession:
 class TestInactiveUser:
     """Usuario con is_active=False no puede acceder."""
 
-    def test_usuario_inactivo_rechazado_login(self, db_session: Session):
+    def test_usuario_inactivo_rechazado_login(self):
         """Usuario inactivo devuelve 401 con mensaje genérico."""
         # Esto se verifica en el endpoint de login
         pass

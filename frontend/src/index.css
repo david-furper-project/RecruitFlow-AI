@@ -14,9 +14,46 @@
 }
 
 @layer base {
+  html {
+    min-width: 320px;
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-[#f8fafc] text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-width: 320px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    min-width: 0;
+  }
+
+  img,
+  svg {
+    max-width: 100%;
+  }
+}
+
+@layer components {
+  .responsive-table-shell {
+    @apply w-full overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+  }
+
+  .responsive-table {
+    @apply min-w-[720px];
+  }
+
+  .modal-shell {
+    max-height: calc(100dvh - 1rem);
   }
 }
 

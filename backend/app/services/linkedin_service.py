@@ -4,7 +4,7 @@ from app.core.config import settings
 def fetch_linkedin_profile(access_token: str) -> str:
     """Extrae datos del usuario desde la API de LinkedIn y devuelve texto para procesar."""
     if settings.LINKEDIN_CLIENT_ID == "mock_linkedin_id":
-        return "Desarrollador Full Stack con 5 años de experiencia en React y Python. Graduado en Ingeniería Informática."
+        raise RuntimeError("La integración autenticada de LinkedIn no está configurada.")
         
     url = "https://api.linkedin.com/v2/userinfo"
     headers = {

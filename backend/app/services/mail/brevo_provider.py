@@ -6,6 +6,10 @@ URL = "https://api.brevo.com/v3/smtp/email"
 
 class BrevoProvider(MailProvider):
     def send(self, to: str, subject: str, html: str) -> str:
+        if not settings.BREVO_API_KEY or settings.BREVO_API_KEY == "mock_brevo_key":
+            raise MailError("Brevo no está configurado: falta una API key válida.")
+        if not settings.MAIL_FROM_EMAIL or settings.MAIL_FROM_EMAIL.endswith("@pri.local"):
+            raise MailError("Brevo no está configurado: falta un remitente verificado.")
         payload = {
             "sender": {"email": settings.MAIL_FROM_EMAIL,
                        "name": settings.MAIL_FROM_NAME},
@@ -21,8 +25,17 @@ class BrevoProvider(MailProvider):
         try:
             r = httpx.post(URL, json=payload, headers=headers, timeout=15)
             r.raise_for_status()
-            return r.json().get("messageId", "")
+            message_id = r.json().get("messageId", "")
+            if not message_id:
+                raise MailError("Brevo aceptó la solicitud sin entregar un identificador de mensaje.")
+            return message_id
         except httpx.HTTPStatusError as e:
-            raise MailError(f"Brevo respondió {e.response.status_code}: {e.response.text}")
+            try:
+                provider_detail = e.response.json().get("message") or "Solicitud rechazada."
+            except ValueError:
+                provider_detail = "Solicitud rechazada."
+            if e.response.status_code == 400 and "sender" in provider_detail.lower():
+                provider_detail = "El remitente configurado no está verificado en Brevo."
+            raise MailError(f"Brevo respondió {e.response.status_code}: {provider_detail}") from e
         except httpx.RequestError as e:
-            raise MailError(f"Error de red al contactar Brevo: {e}")
+            raise MailError("No fue posible conectar con Brevo.") from e

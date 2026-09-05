@@ -30,9 +30,10 @@ class Settings(BaseSettings):
     LINKEDIN_CLIENT_SECRET: str = "mock_linkedin_secret"
     LINKEDIN_REDIRECT_URI: str = "http://localhost:5173/linkedin/callback"
     LINKEDIN_SOURCING_ENABLED: bool = True
+    SOURCING_INVITATION_BASE_URL: str = "http://localhost:5173/invitations"
 
     # Candidate capture
-    MAX_UPLOAD_SIZE_BYTES: int = 5 * 1024 * 1024
+    MAX_UPLOAD_SIZE_BYTES: int = 3 * 1024 * 1024
     OPENAI_MODEL: str = "gpt-4o-mini"
 
     # JWT Authentication

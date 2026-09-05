@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 from sqlmodel import Session, select
 
-from app.models import Application, Decision, Evaluation, User
+from app.models import Application, Decision, Evaluation, Notification, User
 
 
 def get_application_audit(session: Session, application_id: int) -> Dict[str, Any]:
@@ -21,15 +21,34 @@ def get_application_audit(session: Session, application_id: int) -> Dict[str, An
         .order_by(Decision.decided_at.desc())
     ).all()
 
+    decision_ids = [decision.id for decision, _ in decisions if decision.id is not None]
+    notifications_by_decision = {}
+    if decision_ids:
+        notifications = session.exec(
+            select(Notification).where(Notification.decision_id.in_(decision_ids))
+        ).all()
+        notifications_by_decision = {
+            notification.decision_id: notification for notification in notifications
+        }
+
     decision_rows = []
     for decision, user in decisions:
+        notification = notifications_by_decision.get(decision.id)
         decision_rows.append({
             "id": decision.id,
             "user_id": decision.user_id,
             "user_email": user.email,
             "action": decision.action,
             "discrepancy_reason": decision.discrepancy_reason,
+            "feedback": decision.feedback,
             "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
+            "notification": {
+                "id": notification.id,
+                "send_status": notification.send_status,
+                "sent_at": notification.sent_at.isoformat() if notification.sent_at else None,
+                "message_id": notification.message_id,
+                "retry_count": notification.retry_count,
+            } if notification else None,
         })
 
     return {
